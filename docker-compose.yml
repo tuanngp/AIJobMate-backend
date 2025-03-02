@@ -1,0 +1,101 @@
+version: "3.8"
+services:
+  career-advisor:
+    build:
+      context: ./microservices/career-advisor
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8000"
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - REDIS_HOST=redis
+      - DB_HOST=db
+      - DB_USER=jobmate
+      - DB_PASSWORD=secret
+      - DB_NAME=jobmate_db
+    depends_on:
+      - redis
+      - db
+    volumes:
+      - ./microservices/career-advisor/app:/app/app # Hot-reload cho dev
+
+  interview-practice:
+    build:
+      context: ./microservices/interview-practice
+      dockerfile: Dockerfile
+    ports:
+      - "8002:8000"
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - REDIS_HOST=redis
+      - DB_HOST=db
+      - DB_USER=jobmate
+      - DB_PASSWORD=secret
+      - DB_NAME=jobmate_db
+    depends_on:
+      - redis
+      - db
+    volumes:
+      - ./microservices/interview-practice/app:/app/app
+
+  video-coach:
+    build:
+      context: ./microservices/video-coach
+      dockerfile: Dockerfile
+    ports:
+      - "8003:8000"
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - REDIS_HOST=redis
+      - DB_HOST=db
+      - DB_USER=jobmate
+      - DB_PASSWORD=secret
+      - DB_NAME=jobmate_db
+    depends_on:
+      - redis
+      - db
+    volumes:
+      - ./microservices/video-coach/app:/app/app
+
+  job-matching:
+    build:
+      context: ./microservices/job-matching
+      dockerfile: Dockerfile
+    ports:
+      - "8004:8000"
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - REDIS_HOST=redis
+      - DB_HOST=db
+      - DB_USER=jobmate
+      - DB_PASSWORD=secret
+      - DB_NAME=jobmate_db
+    depends_on:
+      - redis
+      - db
+    volumes:
+      - ./microservices/job-matching/app:/app/app
+
+  redis:
+    image: redis:6.2-alpine
+    ports:
+      - "6379:6379"
+
+  db:
+    image: postgres:14
+    environment:
+      - POSTGRES_USER=jobmate
+      - POSTGRES_PASSWORD=secret
+      - POSTGRES_DB=jobmate_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
