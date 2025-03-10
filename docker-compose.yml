@@ -1,101 +1,168 @@
-version: "3.8"
 services:
-  career-advisor:
+  # AI Career Advisor Service
+  ai-career-advisor:
     build:
-      context: ./microservices/career-advisor
+      context: ./services/ai-career-advisor
       dockerfile: Dockerfile
     ports:
       - "8001:8000"
     environment:
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/ai_career_advisor
+      - REDIS_URL=redis://redis:6379/0
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - REDIS_HOST=redis
-      - DB_HOST=db
-      - DB_USER=jobmate
-      - DB_PASSWORD=secret
-      - DB_NAME=jobmate_db
-    depends_on:
-      - redis
-      - db
+      - PINECONE_API_KEY=${PINECONE_API_KEY}
+      - PINECONE_ENVIRONMENT=${PINECONE_ENVIRONMENT}
     volumes:
-      - ./microservices/career-advisor/app:/app/app # Hot-reload cho dev
+      - ./services/ai-career-advisor:/app
+    depends_on:
+      - postgres
+      - redis
 
-  interview-practice:
+  # AI Interview Practice Service
+  ai-interview-practice:
     build:
-      context: ./microservices/interview-practice
+      context: ./services/ai-interview-practice
       dockerfile: Dockerfile
     ports:
-      - "8002:8000"
+      - "8002:3000"
     environment:
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-      - REDIS_HOST=redis
-      - DB_HOST=db
-      - DB_USER=jobmate
-      - DB_PASSWORD=secret
-      - DB_NAME=jobmate_db
-    depends_on:
-      - redis
-      - db
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/ai_interview_practice
+      - REDIS_URL=redis://redis:6379/1
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
     volumes:
-      - ./microservices/interview-practice/app:/app/app
+      - ./services/ai-interview-practice:/app
+    depends_on:
+      - postgres
+      - redis
 
-  video-coach:
+  # AI Video Interview Coach Service
+  ai-video-interview-coach:
     build:
-      context: ./microservices/video-coach
+      context: ./services/ai-video-interview-coach
       dockerfile: Dockerfile
     ports:
       - "8003:8000"
     environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/ai_video_interview_coach
+      - REDIS_URL=redis://redis:6379/2
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-      - REDIS_HOST=redis
-      - DB_HOST=db
-      - DB_USER=jobmate
-      - DB_PASSWORD=secret
-      - DB_NAME=jobmate_db
-    depends_on:
-      - redis
-      - db
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME}
     volumes:
-      - ./microservices/video-coach/app:/app/app
+      - ./services/ai-video-interview-coach:/app
+    depends_on:
+      - postgres
+      - redis
 
+  # Job Matching & Salary Prediction Service
   job-matching:
     build:
-      context: ./microservices/job-matching
+      context: ./services/job-matching
       dockerfile: Dockerfile
     ports:
       - "8004:8000"
     environment:
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-      - REDIS_HOST=redis
-      - DB_HOST=db
-      - DB_USER=jobmate
-      - DB_PASSWORD=secret
-      - DB_NAME=jobmate_db
-    depends_on:
-      - redis
-      - db
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/job_matching
+      - REDIS_URL=redis://redis:6379/3
+      - FEATURE_STORE_URL=redis://redis:6379/4
     volumes:
-      - ./microservices/job-matching/app:/app/app
+      - ./services/job-matching:/app
+    depends_on:
+      - postgres
+      - redis
+      - airflow
 
-  redis:
-    image: redis:6.2-alpine
+  # API Gateway & Authentication Service
+  api-gateway:
+    build:
+      context: ./services/api-gateway
+      dockerfile: Dockerfile
     ports:
-      - "6379:6379"
+      - "8000:8000"
+    environment:
+      - AUTH0_DOMAIN=${AUTH0_DOMAIN}
+      - AUTH0_CLIENT_ID=${AUTH0_CLIENT_ID}
+      - AUTH0_CLIENT_SECRET=${AUTH0_CLIENT_SECRET}
+      - JWT_SECRET=${JWT_SECRET}
+      - CAREER_ADVISOR_URL=http://ai-career-advisor:8000
+      - INTERVIEW_PRACTICE_URL=http://ai-interview-practice:3000
+      - VIDEO_INTERVIEW_COACH_URL=http://ai-video-interview-coach:8000
+      - JOB_MATCHING_URL=http://job-matching:8000
+    depends_on:
+      - ai-career-advisor
+      - ai-interview-practice
+      - ai-video-interview-coach
+      - job-matching
 
-  db:
+  # Database Service
+  postgres:
     image: postgres:14
     environment:
-      - POSTGRES_USER=jobmate
-      - POSTGRES_PASSWORD=secret
-      - POSTGRES_DB=jobmate_db
-    ports:
-      - "5432:5432"
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_MULTIPLE_DATABASES=ai_career_advisor,ai_interview_practice,ai_video_interview_coach,job_matching
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./services/data-storage/init-scripts:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+
+  # Cache Service
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  # Airflow for batch processing and ML pipelines
+  airflow:
+    image: apache/airflow:2.6.0
+    environment:
+      - AIRFLOW__CORE__SQL_ALCHEMY_CONN=postgresql://postgres:postgres@postgres:5432/airflow
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+    volumes:
+      - ./services/job-matching/dags:/opt/airflow/dags
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+    command: >
+      bash -c "airflow db init && 
+              airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@example.com &&
+              airflow webserver & airflow scheduler"
+
+  # Prometheus for monitoring
+  prometheus:
+    image: prom/prometheus:v2.37.0
+    volumes:
+      - ./services/monitoring/prometheus:/etc/prometheus
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+
+  # Grafana for visualization
+  grafana:
+    image: grafana/grafana:9.0.0
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./services/monitoring/grafana/provisioning:/etc/grafana/provisioning
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
 
 volumes:
   postgres_data:
+  redis_data:
+  prometheus_data:
+  grafana_data: 
