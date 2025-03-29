@@ -5,7 +5,7 @@ from typing import List
 from app.api import deps
 from app.models.user import User
 from app.models.cv import CV
-from app.schemas.cv import CVCreate, CVInDB
+from app.schemas.cv import CVInDB
 from app.services.cv_processor import CVProcessor
 
 router = APIRouter()

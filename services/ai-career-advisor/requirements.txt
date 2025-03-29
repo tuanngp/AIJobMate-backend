@@ -25,3 +25,4 @@ PyPDF2
 python-docx
 email-validator
 ecdsa
+bcrypt

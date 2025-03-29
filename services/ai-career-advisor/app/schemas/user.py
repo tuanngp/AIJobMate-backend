@@ -31,7 +31,7 @@ class UserUpdate(UserBase):
 
 # Schema cho việc đọc thông tin user
 class UserInDBBase(UserBase):
-    id: str
+    id: int
     skills: Optional[List[str]] = None
     experiences: Optional[List[Dict[str, Any]]] = None
     education: Optional[List[Dict[str, Any]]] = None

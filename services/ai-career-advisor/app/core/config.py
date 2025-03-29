@@ -50,9 +50,11 @@ class Settings(BaseSettings):
     REDIS_PORT: int = int(os.getenv("REDIS_PORT", 6379))
     REDIS_DB: int = int(os.getenv("REDIS_DB", 0))
     
-    # OpenAI configuration
-    OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
-    GPT_MODEL: str = os.getenv("GPT_MODEL", "gpt-4")
+    # OpenAI/OpenRouter configuration
+    OPENROUTER_API_KEY: str = os.getenv("OPENROUTER_API_KEY", "")
+    SITE_URL: str = os.getenv("SITE_URL", "http://localhost:3000")
+    SITE_NAME: str = os.getenv("SITE_NAME", "AI Career Advisor")
+    AI_MODEL: str = os.getenv("AI_MODEL", "deepseek/deepseek-r1:free")
     
     # Pinecone configuration
     PINECONE_API_KEY: str = os.getenv("PINECONE_API_KEY", "")

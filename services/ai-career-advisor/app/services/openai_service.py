@@ -2,7 +2,7 @@ import json
 import logging
 from typing import Any, Dict, List, Optional
 
-import openai
+from openai import OpenAI
 from tenacity import retry, stop_after_attempt, wait_random_exponential
 
 from app.core.config import settings
@@ -10,8 +10,17 @@ from app.core.config import settings
 # Cấu hình logging
 logger = logging.getLogger(__name__)
 
-# Cấu hình API key
-openai.api_key = settings.OPENAI_API_KEY
+# Khởi tạo OpenAI client với OpenRouter
+client = OpenAI(
+    base_url="https://openrouter.ai/api/v1",
+    api_key=settings.OPENROUTER_API_KEY,
+)
+
+# Cấu hình headers cho OpenRouter
+extra_headers = {
+    "HTTP-Referer": settings.SITE_URL,
+    "X-Title": settings.SITE_NAME,
+}
 
 # Hàm để tạo embeddings
 @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(5))
@@ -26,7 +35,7 @@ def create_embedding(text: str) -> List[float]:
         List[float]: Vector embedding.
     """
     try:
-        response = openai.embeddings.create(
+        response = client.embeddings.create(
             model="text-embedding-ada-002",
             input=text
         )
@@ -110,8 +119,9 @@ def analyze_career_profile(
         """
         
         # Gọi API
-        response = openai.chat.completions.create(
-            model=settings.GPT_MODEL,
+        response = client.chat.completions.create(
+            extra_headers=extra_headers,
+            model=settings.AI_MODEL,
             messages=[
                 {"role": "system", "content": "Bạn là AI Career Advisor, một hệ thống tư vấn nghề nghiệp bằng AI. Bạn phân tích dữ liệu và đưa ra khuyến nghị."},
                 {"role": "user", "content": prompt}
@@ -199,8 +209,9 @@ def identify_skill_gaps(
         """
         
         # Gọi API
-        response = openai.chat.completions.create(
-            model=settings.GPT_MODEL,
+        response = client.chat.completions.create(
+            extra_headers=extra_headers,
+            model=settings.AI_MODEL,
             messages=[
                 {"role": "system", "content": "Bạn là AI Career Advisor, một hệ thống tư vấn nghề nghiệp bằng AI. Bạn phân tích dữ liệu và đưa ra khuyến nghị."},
                 {"role": "user", "content": prompt}
