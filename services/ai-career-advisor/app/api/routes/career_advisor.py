@@ -6,7 +6,8 @@ from pydantic import parse_obj_as
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_db
-from app.models.career_profile import CareerProfile, CareerPathway
+from app.models.career_profile import CareerProfile
+from app.models.career_pathway import CareerPathway
 from app.models.user import User
 from app.schemas.career_profile import (
     CareerAnalysisRequest,

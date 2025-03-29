@@ -50,7 +50,7 @@ class CareerProfileInDBBase(CareerProfileBase):
         return v
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 # Schema để trả về từ API
 class CareerProfile(CareerProfileInDBBase):
@@ -108,7 +108,7 @@ class CareerPathwayInDBBase(CareerPathwayBase):
         return v
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 # Schema để trả về từ API
 class CareerPathway(CareerPathwayInDBBase):

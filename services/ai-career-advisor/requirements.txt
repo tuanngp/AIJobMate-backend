@@ -1,12 +1,13 @@
 fastapi
 uvicorn
 pydantic
+pydantic-settings
 python-dotenv
 sqlalchemy
 alembic
 psycopg2-binary
 openai
-pinecone-client
+pinecone
 redis
 httpx
 python-jose
@@ -19,3 +20,8 @@ langchain
 pandas
 numpy
 sentence-transformers
+python-multipart
+PyPDF2
+python-docx
+email-validator
+ecdsa

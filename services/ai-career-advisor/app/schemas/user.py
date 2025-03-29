@@ -45,7 +45,7 @@ class UserInDBBase(UserBase):
         return v
         
     class Config:
-        orm_mode = True
+        from_attributes=True
 
 # Schema để trả về từ API
 class User(UserInDBBase):
