@@ -23,32 +23,40 @@ class CVProcessor:
                 f"Định dạng file không được hỗ trợ. Chỉ hỗ trợ: {', '.join(CVProcessor.ALLOWED_EXTENSIONS)}"
             )
         
-        # Lưu file tạm thời
-        with tempfile.NamedTemporaryFile(delete=False) as temp_file:
-            content = await file.read()
+        content = await file.read()
+        
+        # Xử lý file dựa trên định dạng
+        if file_extension == '.txt':
+            return file_name, file_extension[1:], content.decode('utf-8')
+            
+        # Xử lý PDF và DOCX với temporary file
+        with tempfile.NamedTemporaryFile(suffix=file_extension, delete=False) as temp_file:
             temp_file.write(content)
             temp_file.flush()
-            
+            temp_path = temp_file.name
+        
+        try:
+            if file_extension == '.pdf':
+                with open(temp_path, 'rb') as pdf_file:
+                    extracted_text = CVProcessor._extract_from_pdf(pdf_file)
+            else:  # .docx
+                extracted_text = CVProcessor._extract_from_docx(temp_path)
+        finally:
             try:
-                if file_extension == '.pdf':
-                    extracted_text = CVProcessor._extract_from_pdf(temp_file.name)
-                elif file_extension == '.docx':
-                    extracted_text = CVProcessor._extract_from_docx(temp_file.name)
-                else:  # .txt
-                    extracted_text = content.decode('utf-8')
-            finally:
-                os.unlink(temp_file.name)  # Xóa file tạm
+                os.unlink(temp_path)
+            except OSError:
+                # Bỏ qua lỗi nếu file đã bị xóa hoặc không thể xóa
+                pass
                 
         return file_name, file_extension[1:], extracted_text
     
     @staticmethod
-    def _extract_from_pdf(file_path: str) -> str:
+    def _extract_from_pdf(file) -> str:
         """Trích xuất text từ file PDF"""
         text = ""
-        with open(file_path, 'rb') as file:
-            pdf_reader = PyPDF2.PdfReader(file)
-            for page in pdf_reader.pages:
-                text += page.extract_text() + "\n"
+        pdf_reader = PyPDF2.PdfReader(file)
+        for page in pdf_reader.pages:
+            text += page.extract_text() + "\n"
         return text.strip()
     
     @staticmethod
@@ -63,12 +71,35 @@ class CVProcessor:
     @staticmethod
     def analyze_cv(text: str) -> dict:
         """
-        Phân tích nội dung CV và trích xuất thông tin quan trọng
-        Có thể mở rộng thêm để sử dụng AI để phân tích
+        Phân tích nội dung CV và trích xuất thông tin quan trọng sử dụng AI
         """
-        # TODO: Implement AI analysis
-        return {
-            "content": text,
-            "word_count": len(text.split()),
-            "char_count": len(text)
-        }
+        from app.services.openai_service import analyze_cv_content
+        
+        try:
+            # Chuẩn hóa text trước khi phân tích
+            normalized_text = text.strip()
+            
+            # Gọi OpenAI service để phân tích CV
+            analysis_result = analyze_cv_content(normalized_text)
+            
+            # Thêm các metrics cơ bản
+            analysis_result["metrics"] = {
+                "word_count": len(text.split()),
+                "char_count": len(text),
+                "sections_found": len(analysis_result.get("experience", [])) +
+                                len(analysis_result.get("education", []))
+            }
+            
+            return analysis_result
+            
+        except Exception as e:
+            # Log lỗi và trả về kết quả phân tích cơ bản nếu AI fails
+            logger.error(f"Lỗi khi phân tích CV với AI: {str(e)}")
+            return {
+                "error": "Không thể phân tích chi tiết CV",
+                "basic_analysis": {
+                    "content": text[:1000] + "..." if len(text) > 1000 else text,
+                    "word_count": len(text.split()),
+                    "char_count": len(text)
+                }
+            }

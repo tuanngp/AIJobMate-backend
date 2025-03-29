@@ -156,6 +156,131 @@ def analyze_career_profile(
         logger.error(f"Lỗi khi phân tích hồ sơ: {str(e)}")
         raise
 
+# Hàm để phân tích CV
+@retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(3))
+def analyze_cv_content(cv_text: str) -> Dict[str, Any]:
+    """
+    Phân tích nội dung CV và trích xuất thông tin quan trọng.
+    
+    Args:
+        cv_text: Nội dung CV dạng text.
+        
+    Returns:
+        Dict[str, Any]: Kết quả phân tích CV với các thông tin được cấu trúc.
+    """
+    try:
+        # Tạo prompt
+        prompt = f"""
+        Phân tích CV sau và trích xuất thông tin chi tiết theo cấu trúc:
+
+        CV Content:
+        {cv_text}
+
+        Yêu cầu:
+        1. Trích xuất thông tin cá nhân
+        2. Phân tích học vấn và chứng chỉ
+        3. Phân tích kinh nghiệm làm việc
+        4. Đánh giá kỹ năng
+        5. Đề xuất hướng phát triển
+
+        Định dạng phản hồi JSON:
+        {{
+            "personal_info": {{
+                "name": "Tên người dùng",
+                "email": "email@example.com",
+                "phone": "Số điện thoại",
+                "location": "Địa chỉ"
+            }},
+            "education": [
+                {{
+                    "degree": "Tên bằng cấp",
+                    "institution": "Tên trường",
+                    "year": "Năm tốt nghiệp",
+                    "major": "Chuyên ngành",
+                    "achievements": ["Thành tích 1", "Thành tích 2"]
+                }}
+            ],
+            "certifications": [
+                {{
+                    "name": "Tên chứng chỉ",
+                    "issuer": "Tổ chức cấp",
+                    "year": "Năm cấp"
+                }}
+            ],
+            "experience": [
+                {{
+                    "position": "Vị trí",
+                    "company": "Tên công ty",
+                    "duration": "Thời gian làm việc",
+                    "responsibilities": ["Trách nhiệm 1", "Trách nhiệm 2"],
+                    "achievements": ["Thành tích 1", "Thành tích 2"]
+                }}
+            ],
+            "skills": {{
+                "technical": ["Kỹ năng 1", "Kỹ năng 2"],
+                "soft": ["Kỹ năng mềm 1", "Kỹ năng mềm 2"],
+                "languages": ["Ngôn ngữ 1", "Ngôn ngữ 2"]
+            }},
+            "analysis": {{
+                "strengths": ["Điểm mạnh 1", "Điểm mạnh 2"],
+                "weaknesses": ["Điểm yếu 1", "Điểm yếu 2"],
+                "career_recommendations": [
+                    {{
+                        "position": "Vị trí đề xuất",
+                        "reason": "Lý do phù hợp",
+                        "required_skills": ["Kỹ năng cần có 1", "Kỹ năng cần có 2"]
+                    }}
+                ],
+                "development_suggestions": [
+                    {{
+                        "area": "Lĩnh vực cần phát triển",
+                        "suggestion": "Đề xuất cụ thể",
+                        "resources": ["Nguồn học 1", "Nguồn học 2"]
+                    }}
+                ]
+            }}
+        }}
+        
+        Đảm bảo phản hồi của bạn chỉ chứa JSON hợp lệ, không có văn bản giới thiệu hoặc giải thích.
+        """
+        
+        # Gọi API
+        response = client.chat.completions.create(
+            extra_headers=extra_headers,
+            model=settings.AI_MODEL,
+            messages=[
+                {"role": "system", "content": "Bạn là AI CV Analyzer, một hệ thống phân tích CV chuyên nghiệp. Bạn phân tích kỹ lưỡng và đưa ra nhận xét chi tiết về CV."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3,
+            max_tokens=2500
+        )
+        
+        # Xử lý phản hồi
+        result_text = response.choices[0].message.content.strip()
+        
+        # Chuyển đổi phản hồi thành JSON
+        try:
+            if result_text.startswith("```json"):
+                result_text = result_text.replace("```json", "", 1)
+                if "```" in result_text:
+                    result_text = result_text.split("```")[0]
+            elif result_text.startswith("```"):
+                result_text = result_text.replace("```", "", 1)
+                if "```" in result_text:
+                    result_text = result_text.split("```")[0]
+                    
+            result_data = json.loads(result_text.strip())
+            return result_data
+        except json.JSONDecodeError as e:
+            logger.error(f"Lỗi xử lý JSON: {str(e)}")
+            logger.error(f"Dữ liệu nhận được: {result_text}")
+            raise Exception("Không thể phân tích phản hồi từ AI. Vui lòng thử lại.")
+            
+    except Exception as e:
+        logger.error(f"Lỗi khi phân tích CV: {str(e)}")
+        raise
+
 # Hàm để xác định khoảng cách kỹ năng
 @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(3))
 def identify_skill_gaps(
