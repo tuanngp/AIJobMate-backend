@@ -1,78 +1,5 @@
 services:
-  # AI Career Advisor Service
-  ai-career-advisor:
-    build:
-      context: ./services/ai-career-advisor
-      dockerfile: Dockerfile
-    ports:
-      - "8001:8000"
-    environment:
-      - DATABASE_URL=postgresql://postgres:postgres@123:5432/ai_career_advisor
-      - REDIS_URL=redis://redis:6379/0
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - PINECONE_API_KEY=${PINECONE_API_KEY}
-      - PINECONE_ENVIRONMENT=${PINECONE_ENVIRONMENT}
-    volumes:
-      - ./services/ai-career-advisor:/app
-    depends_on:
-      - postgres
-      - redis
-
-  # AI Interview Practice Service
-  ai-interview-practice:
-    build:
-      context: ./services/ai-interview-practice
-      dockerfile: Dockerfile
-    ports:
-      - "8002:3000"
-    environment:
-      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/ai_interview_practice
-      - REDIS_URL=redis://redis:6379/1
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-    volumes:
-      - ./services/ai-interview-practice:/app
-    depends_on:
-      - postgres
-      - redis
-
-  # AI Video Interview Coach Service
-  ai-video-interview-coach:
-    build:
-      context: ./services/ai-video-interview-coach
-      dockerfile: Dockerfile
-    ports:
-      - "8003:8000"
-    environment:
-      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/ai_video_interview_coach
-      - REDIS_URL=redis://redis:6379/2
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-      - S3_BUCKET_NAME=${S3_BUCKET_NAME}
-    volumes:
-      - ./services/ai-video-interview-coach:/app
-    depends_on:
-      - postgres
-      - redis
-
-  # Job Matching & Salary Prediction Service
-  job-matching:
-    build:
-      context: ./services/job-matching
-      dockerfile: Dockerfile
-    ports:
-      - "8004:8000"
-    environment:
-      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/job_matching
-      - REDIS_URL=redis://redis:6379/3
-      - FEATURE_STORE_URL=redis://redis:6379/4
-    volumes:
-      - ./services/job-matching:/app
-    depends_on:
-      - postgres
-      - redis
-      - airflow
-
-  # API Gateway & Authentication Service
+  # API Gateway
   api-gateway:
     build:
       context: ./services/api-gateway
@@ -80,89 +7,143 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - AUTH0_DOMAIN=${AUTH0_DOMAIN}
-      - AUTH0_CLIENT_ID=${AUTH0_CLIENT_ID}
-      - AUTH0_CLIENT_SECRET=${AUTH0_CLIENT_SECRET}
-      - JWT_SECRET=${JWT_SECRET}
-      - CAREER_ADVISOR_URL=http://ai-career-advisor:8000
-      - INTERVIEW_PRACTICE_URL=http://ai-interview-practice:3000
-      - VIDEO_INTERVIEW_COACH_URL=http://ai-video-interview-coach:8000
-      - JOB_MATCHING_URL=http://job-matching:8000
+      - AUTH_SERVICE_URL=http://auth-service:8001
+      - CAREER_ADVISOR_SERVICE_URL=http://career-advisor-service:8002
+      - FRONTEND_URL=http://localhost:3000
+      - ALLOWED_ORIGINS=["http://localhost:3000"]
     depends_on:
-      - ai-career-advisor
-      - ai-interview-practice
-      - ai-video-interview-coach
-      - job-matching
+      auth-service:
+        condition: service_healthy
+      career-advisor-service:
+        condition: service_healthy
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
-  # Database Service
-  postgres:
-    image: postgres:14
+  # Auth Service
+  auth-service:
+    build:
+      context: ./services/auth-service
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8000"
     environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - POSTGRES_MULTIPLE_DATABASES=ai_career_advisor,ai_interview_practice,ai_video_interview_coach,job_matching
+      - POSTGRES_SERVER=postgres-auth
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=auth_service
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - JWT_REFRESH_SECRET_KEY=${JWT_REFRESH_SECRET_KEY}
+      - ACCESS_TOKEN_EXPIRE_MINUTES=30
+      - REFRESH_TOKEN_EXPIRE_DAYS=7
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./services/data-storage/init-scripts:/docker-entrypoint-initdb.d
-    ports:
-      - "5432:5432"
+      - ./services/auth-service:/app
+    depends_on:
+      postgres-auth:
+        condition: service_healthy
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
-  # Cache Service
-  redis:
-    image: redis:7
+  career-advisor-service:
+    build:
+      context: ./services/career-advisor-service
+      dockerfile: Dockerfile
     ports:
-      - "6379:6379"
+      - "8002:8000"
+    environment:
+      - POSTGRES_SERVER=postgres-career
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=career_advisor_service
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - PINECONE_API_KEY=${PINECONE_API_KEY}
+      - PINECONE_ENVIRONMENT=${PINECONE_ENVIRONMENT}
+      - PINECONE_INDEX=${PINECONE_INDEX}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+    volumes:
+      - ./services/career-advisor-service:/app
+    depends_on:
+      postgres-career:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # PostgreSQL for Auth Service
+  postgres-auth:
+    image: postgres:16
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=auth_service
+    volumes:
+      - postgres_auth_data:/var/lib/postgresql/data
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d auth_service"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # PostgreSQL for Career Advisor
+  postgres-career:
+    image: postgres:16
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=career_advisor_service
+    volumes:
+      - postgres_career_data:/var/lib/postgresql/data
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d career_advisor_service"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  redis:
+    image: redis:alpine
+    command: redis-server --appendonly yes
     volumes:
       - redis_data:/data
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
-  # Airflow for batch processing and ML pipelines
-  airflow:
-    image: apache/airflow:2.6.0
-    environment:
-      - AIRFLOW__CORE__SQL_ALCHEMY_CONN=postgresql://postgres:postgres@postgres:5432/airflow
-      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
-    volumes:
-      - ./services/job-matching/dags:/opt/airflow/dags
-    ports:
-      - "8080:8080"
-    depends_on:
-      - postgres
-    command: >
-      bash -c "airflow db init && 
-              airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@example.com &&
-              airflow webserver & airflow scheduler"
-
-  # Prometheus for monitoring
-  prometheus:
-    image: prom/prometheus:v2.37.0
-    volumes:
-      - ./services/monitoring/prometheus:/etc/prometheus
-      - prometheus_data:/prometheus
-    ports:
-      - "9090:9090"
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
-      - '--web.console.templates=/usr/share/prometheus/consoles'
-
-  # Grafana for visualization
-  grafana:
-    image: grafana/grafana:9.0.0
-    volumes:
-      - grafana_data:/var/lib/grafana
-      - ./services/monitoring/grafana/provisioning:/etc/grafana/provisioning
-    environment:
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=admin
-      - GF_USERS_ALLOW_SIGN_UP=false
-    ports:
-      - "3000:3000"
-    depends_on:
-      - prometheus
+networks:
+  backend:
+    driver: bridge
 
 volumes:
-  postgres_data:
+  postgres_auth_data:
+  postgres_career_data:
   redis_data:
-  prometheus_data:
-  grafana_data: 

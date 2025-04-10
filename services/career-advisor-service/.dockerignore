@@ -1,0 +1,74 @@
+# Python bytecode & interpreter junk
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pkl
+*.swp
+*.swo
+.Python
+
+# Virtual environments
+env/
+venv/
+.venv/
+
+# Environment & secrets
+.env
+.env.*
+*.log
+*.db
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Git & editor files
+.git/
+.gitignore
+.idea/
+.vscode/
+*.code-workspace
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+*.whl
+*.tar.gz
+
+# Coverage & test junk
+.pytest_cache/
+.coverage
+htmlcov/
+tests/
+benchmarks/
+debug/
+
+# Notebooks & checkpoints
+*.ipynb
+.ipynb_checkpoints/
+
+# Model files & AI artifacts
+*.pt
+*.pth
+*.bin
+*.ckpt
+*.onnx
+*.h5
+*.npz
+*.npy
+
+# Model/data folders
+models/
+checkpoints/
+datasets/
+data/
+cache/
+vectorstore/
+index/
+hf_cache/
+transformers_cache/
+
+# DVC artifacts (if used)
+.dvc/
