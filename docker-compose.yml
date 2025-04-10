@@ -1,101 +1,149 @@
-version: "3.8"
 services:
-  career-advisor:
+  # API Gateway
+  api-gateway:
     build:
-      context: ./microservices/career-advisor
+      context: ./services/api-gateway
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - AUTH_SERVICE_URL=http://auth-service:8001
+      - CAREER_ADVISOR_SERVICE_URL=http://career-advisor-service:8002
+      - FRONTEND_URL=http://localhost:3000
+      - ALLOWED_ORIGINS=["http://localhost:3000"]
+    depends_on:
+      auth-service:
+        condition: service_healthy
+      career-advisor-service:
+        condition: service_healthy
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Auth Service
+  auth-service:
+    build:
+      context: ./services/auth-service
       dockerfile: Dockerfile
     ports:
       - "8001:8000"
     environment:
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - REDIS_HOST=redis
-      - DB_HOST=db
-      - DB_USER=jobmate
-      - DB_PASSWORD=secret
-      - DB_NAME=jobmate_db
-    depends_on:
-      - redis
-      - db
+      - POSTGRES_SERVER=postgres-auth
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=auth_service
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - JWT_REFRESH_SECRET_KEY=${JWT_REFRESH_SECRET_KEY}
+      - ACCESS_TOKEN_EXPIRE_MINUTES=30
+      - REFRESH_TOKEN_EXPIRE_DAYS=7
     volumes:
-      - ./microservices/career-advisor/app:/app/app # Hot-reload cho dev
+      - ./services/auth-service:/app
+    depends_on:
+      postgres-auth:
+        condition: service_healthy
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
-  interview-practice:
+  career-advisor-service:
     build:
-      context: ./microservices/interview-practice
+      context: ./services/career-advisor-service
       dockerfile: Dockerfile
     ports:
       - "8002:8000"
     environment:
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - POSTGRES_SERVER=postgres-career
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=career_advisor_service
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - PINECONE_API_KEY=${PINECONE_API_KEY}
+      - PINECONE_ENVIRONMENT=${PINECONE_ENVIRONMENT}
+      - PINECONE_INDEX=${PINECONE_INDEX}
       - REDIS_HOST=redis
-      - DB_HOST=db
-      - DB_USER=jobmate
-      - DB_PASSWORD=secret
-      - DB_NAME=jobmate_db
-    depends_on:
-      - redis
-      - db
+      - REDIS_PORT=6379
+      - REDIS_DB=0
     volumes:
-      - ./microservices/interview-practice/app:/app/app
+      - ./services/career-advisor-service:/app
+    depends_on:
+      postgres-career:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
-  video-coach:
-    build:
-      context: ./microservices/video-coach
-      dockerfile: Dockerfile
-    ports:
-      - "8003:8000"
+  # PostgreSQL for Auth Service
+  postgres-auth:
+    image: postgres:16
     environment:
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-      - REDIS_HOST=redis
-      - DB_HOST=db
-      - DB_USER=jobmate
-      - DB_PASSWORD=secret
-      - DB_NAME=jobmate_db
-    depends_on:
-      - redis
-      - db
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=auth_service
     volumes:
-      - ./microservices/video-coach/app:/app/app
+      - postgres_auth_data:/var/lib/postgresql/data
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d auth_service"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
-  job-matching:
-    build:
-      context: ./microservices/job-matching
-      dockerfile: Dockerfile
-    ports:
-      - "8004:8000"
+  # PostgreSQL for Career Advisor
+  postgres-career:
+    image: postgres:16
     environment:
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-      - REDIS_HOST=redis
-      - DB_HOST=db
-      - DB_USER=jobmate
-      - DB_PASSWORD=secret
-      - DB_NAME=jobmate_db
-    depends_on:
-      - redis
-      - db
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=career_advisor_service
     volumes:
-      - ./microservices/job-matching/app:/app/app
+      - postgres_career_data:/var/lib/postgresql/data
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d career_advisor_service"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   redis:
-    image: redis:6.2-alpine
-    ports:
-      - "6379:6379"
-
-  db:
-    image: postgres:14
-    environment:
-      - POSTGRES_USER=jobmate
-      - POSTGRES_PASSWORD=secret
-      - POSTGRES_DB=jobmate_db
-    ports:
-      - "5432:5432"
+    image: redis:alpine
+    command: redis-server --appendonly yes
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - redis_data:/data
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+networks:
+  backend:
+    driver: bridge
 
 volumes:
-  postgres_data:
+  postgres_auth_data:
+  postgres_career_data:
+  redis_data:
