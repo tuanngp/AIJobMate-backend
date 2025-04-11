@@ -58,14 +58,17 @@ class UserInDBBase(UserBase):
     disabled: bool = False
     created_at: datetime
     updated_at: datetime
-    roles: List[str]
+    roles: List[Role]
 
     class Config:
         from_attributes = True
+        arbitrary_types_allowed = True
 
     @field_serializer('roles')
-    def serialize_roles(self, roles: List['Role']) -> List[str]:
-        return [role.name for role in (roles or [])]
+    def serialize_roles(self, roles: List[Role], _info) -> List[str]:
+        if not roles:
+            return []
+        return [role.name for role in roles]
 
 
 
