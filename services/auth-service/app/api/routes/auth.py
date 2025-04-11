@@ -60,11 +60,12 @@ async def login(
         )
     
     # Create tokens
+    user_roles = [role.name for role in user.roles]
     access_token = create_access_token(
         user.id,
-        [role.name for role in user.roles]
+        user_roles
     )
-    refresh_token = create_refresh_token(user.id)
+    refresh_token = create_refresh_token(user.id, user_roles)
     
     # Store refresh token
     if not await TokenService.store_refresh_token(db, refresh_token, user.id):
@@ -114,11 +115,12 @@ async def refresh_token(
             )
         
         # Create new tokens
+        user_roles = [role.name for role in user.roles]
         new_access_token = create_access_token(
             user.id,
-            [role.name for role in user.roles]
+            user_roles
         )
-        new_refresh_token = create_refresh_token(user.id)
+        new_refresh_token = create_refresh_token(user.id, user_roles)
         
         # Revoke old refresh token and store new one
         await TokenService.revoke_refresh_token(db, refresh_token.refresh_token, payload.sub)

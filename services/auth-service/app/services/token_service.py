@@ -13,12 +13,15 @@ class TokenService:
             refresh_token = RefreshTokenDB(
                 token=token,
                 user_id=user_id,
-                expires_at=datetime.fromtimestamp(payload.exp)
+                expires_at=payload.exp
             )
             db.add(refresh_token)
             db.commit()
             return True
-        except Exception:
+        except Exception as e:
+            import logging
+            logging.error(f"Error storing refresh token: {str(e)}")
+            db.rollback()
             return False
 
     @staticmethod
