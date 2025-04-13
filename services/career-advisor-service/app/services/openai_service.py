@@ -42,7 +42,7 @@ def with_timeout(timeout_seconds: int = 30):
         return wrapper
     return decorator
 
-@retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(5))
+@retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(3))
 async def create_embedding(text: str) -> List[float]:
     """
     Tạo embedding vector cho văn bản đầu vào sử dụng sentence-transformers.
@@ -153,7 +153,7 @@ async def analyze_career_profile(
         cache_key = redis_service.generate_cache_key(
             "career_analysis",
             "_".join(skills[:3]),  # Sử dụng 3 kỹ năng đầu tiên làm key
-            "_".join(str(exp['title']) for exp in experiences[:2])  # 2 kinh nghiệm đầu
+            "_".join(str(exp['position']) for exp in experiences[:2])  # 2 kinh nghiệm đầu
         )
         cached_result = redis_service.get_cache(cache_key)
         
@@ -161,7 +161,7 @@ async def analyze_career_profile(
             return cached_result
 
         # Gọi API nếu không có trong cache
-        response = await client.chat.completions.create(
+        response = client.chat.completions.create(
             extra_headers=extra_headers,
             model=settings.AI_MODEL,
             messages=[
@@ -210,8 +210,10 @@ def analyze_cv_content(cv_text: str) -> Dict[str, Any]:
     Returns:
         Dict[str, Any]: Kết quả phân tích CV với các thông tin được cấu trúc.
     """
+    logger.info(f"Bắt đầu phân tích nội dung CV")
     try:
         # Tạo prompt
+        logger.info("Chuẩn bị prompt cho OpenAI API")
         prompt = f"""
         Phân tích CV sau và trích xuất thông tin chi tiết theo cấu trúc:
 
@@ -287,6 +289,7 @@ def analyze_cv_content(cv_text: str) -> Dict[str, Any]:
         """
         
         # Gọi API
+        logger.info("Gửi request đến OpenAI API")
         response = client.chat.completions.create(
             extra_headers=extra_headers,
             model=settings.AI_MODEL,
@@ -299,7 +302,9 @@ def analyze_cv_content(cv_text: str) -> Dict[str, Any]:
         )
         
         # Xử lý phản hồi
+        logger.info("Nhận response từ OpenAI API")
         result_text = response.choices[0].message.content.strip()
+        logger.info("Bắt đầu xử lý JSON response")
         
         # Chuyển đổi phản hồi thành JSON
         try:
@@ -313,10 +318,42 @@ def analyze_cv_content(cv_text: str) -> Dict[str, Any]:
                     result_text = result_text.split("```")[0]
                     
             result_data = json.loads(result_text.strip())
+            logger.info("Parse JSON thành công")
+            
+            # Validate và đảm bảo format của result_data
+            logger.info("Bắt đầu validate kết quả")
+            required_fields = {
+                "personal_info": dict,
+                "education": list,
+                "certifications": list,
+                "experience": list,
+                "skills": dict,
+                "analysis": dict
+            }
+            
+            for field, field_type in required_fields.items():
+                if field not in result_data:
+                    result_data[field] = field_type()
+                elif not isinstance(result_data[field], field_type):
+                    result_data[field] = field_type()
+            
+            logger.info("Validation các trường bắt buộc hoàn thành")
+
+            # Đảm bảo cấu trúc của skills
+            if "skills" in result_data:
+                if not isinstance(result_data["skills"], dict):
+                    logger.warning("Skills không đúng format dict, đang sửa lại")
+                    result_data["skills"] = {}
+                for skill_type in ["technical", "soft", "languages"]:
+                    if skill_type not in result_data["skills"]:
+                        result_data["skills"][skill_type] = []
+            logger.info("Hoàn thành xử lý và validation kết quả")
             return result_data
+            
         except json.JSONDecodeError as e:
             logger.error(f"Lỗi xử lý JSON: {str(e)}")
             logger.error(f"Dữ liệu nhận được: {result_text}")
+            logger.error("JSON Error Stacktrace:", exc_info=True)
             raise Exception("Không thể phân tích phản hồi từ AI. Vui lòng thử lại.")
             
     except Exception as e:
@@ -325,7 +362,7 @@ def analyze_cv_content(cv_text: str) -> Dict[str, Any]:
 
 # Hàm để xác định khoảng cách kỹ năng
 @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(3))
-@with_timeout(timeout_seconds=45)
+@with_timeout(timeout_seconds=60)
 async def identify_skill_gaps(
     current_skills: List[str],
     target_career: str,

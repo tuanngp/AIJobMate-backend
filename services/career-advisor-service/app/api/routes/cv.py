@@ -77,45 +77,91 @@ async def run_analysis(cv_id: int, db: Session):
     """
     Thực hiện phân tích CV trong background
     """
+    logger.info(f"=== Bắt đầu task phân tích CV {cv_id} ===")
+    cv = None
     try:
+        logger.info(f"CV {cv_id}: Đang tìm CV trong database")
         cv = db.query(CV).filter(CV.id == cv_id).first()
         if not cv:
             logger.error(f"CV {cv_id} không tồn tại")
             return
-        
         # Cập nhật trạng thái
+        logger.info(f"CV {cv_id}: Cập nhật trạng thái sang processing")
         cv.analysis_status = "processing"
         cv.last_analyzed_at = datetime.utcnow()
         db.commit()
+        logger.info(f"CV {cv_id}: Bắt đầu quá trình phân tích")
+        
         
         # Phân tích CV
         analysis_result = await CVProcessor.analyze_cv(cv_id, cv.extracted_text)
         
-        # Cập nhật kết quả vào CV
-        cv.skills = analysis_result.get("cv_analysis", {}).get("skills")
-        cv.experiences = analysis_result.get("cv_analysis", {}).get("experience")
-        cv.education = analysis_result.get("cv_analysis", {}).get("education")
-        cv.career_goals = analysis_result.get("career_analysis", {}).get("career_paths")
-        cv.preferred_industries = [path.get("industry") for path in analysis_result.get("career_matches", [])]
+        logger.info(f"CV {cv_id}: Nhận kết quả phân tích từ CVProcessor")
+        if analysis_result.get("error"):
+            logger.error(f"CV {cv_id}: Lỗi từ CVProcessor: {analysis_result['error_message']}")
+            raise ValueError(analysis_result["error_message"])
+            
+        logger.info(f"CV {cv_id}: Bắt đầu cập nhật thông tin cơ bản")
+        # Cập nhật thông tin cơ bản
+        basic_analysis = analysis_result.get("basic_analysis", {})
+        cv.skills = basic_analysis.get("skills")
+        cv.experiences = basic_analysis.get("experience", [])
+        logger.info(f"CV {cv_id}: Tìm thấy {len(cv.experiences)} kinh nghiệm làm việc")
+        cv.education = basic_analysis.get("education", [])
         
-        cv.strengths = analysis_result.get("career_analysis", {}).get("strengths")
-        cv.weaknesses = analysis_result.get("career_analysis", {}).get("weaknesses")
-        cv.skill_gaps = analysis_result.get("skill_gaps", {}).get("missing_skills")
-        cv.recommended_career_paths = analysis_result.get("career_matches")
-        cv.recommended_skills = analysis_result.get("skill_gaps", {}).get("recommended_skills")
-        cv.recommended_actions = analysis_result.get("career_analysis", {}).get("recommended_actions")
+        # Cập nhật phân tích career
+        career_analysis = analysis_result.get("career_analysis", {})
+        cv.strengths = career_analysis.get("strengths", [])
+        cv.weaknesses = career_analysis.get("weaknesses", [])
+        cv.career_goals = career_analysis.get("career_paths", [])
         
+        # Cập nhật career matches và related data
+        career_matches = analysis_result.get("career_matches", [])
+        cv.recommended_career_paths = career_matches
+        cv.preferred_industries = list(set([
+            match.get("industry", "").strip()
+            for match in career_matches
+            if match.get("industry")
+        ]))
+        
+        # Cập nhật skill gaps và recommendations
+        cv.skill_gaps = analysis_result.get("skill_gaps", [])
+        cv.recommended_skills = [
+            {"skill": gap.get("skill"), "importance": gap.get("importance")}
+            for gap in analysis_result.get("skill_gaps", [])
+            if isinstance(gap, dict) and gap.get("skill")
+        ]
+        cv.recommended_actions = career_analysis.get("recommended_actions", [])
+        
+        # Lưu vector embedding
         cv.embedding_vector = analysis_result.get("embedding_vector")
+        
+        # Cập nhật trạng thái và thời gian
         cv.analysis_status = "completed"
+        cv.last_analyzed_at = datetime.utcnow()
         
-        db.commit()
-        
-    except Exception as e:
-        logger.error(f"Error analyzing CV {cv_id}: {str(e)}")
-        if cv:
-            cv.analysis_status = "failed"
-            cv.analysis_error = str(e)
+        logger.info(f"CV {cv_id}: Lưu kết quả vào database")
+        try:
             db.commit()
+            logger.info(f"CV {cv_id}: Đã lưu thành công vào database")
+        except Exception as db_error:
+            logger.error(f"Database error while saving CV analysis: {str(db_error)}")
+            raise
+            
+    except Exception as e:
+        error_msg = f"Lỗi khi phân tích CV {cv_id}: {str(e)}"
+        logger.error(f"CV {cv_id}: {error_msg}")
+        logger.error(f"CV {cv_id}: Stacktrace:", exc_info=True)
+        
+        if cv:
+            logger.info(f"CV {cv_id}: Cập nhật trạng thái lỗi")
+            try:
+                cv.analysis_status = "failed"
+                cv.analysis_error = error_msg
+                db.commit()
+                logger.info(f"CV {cv_id}: Đã lưu trạng thái lỗi")
+            except Exception as db_error:
+                logger.error(f"Failed to update error status: {str(db_error)}")
 
 @router.post("/{cv_id}/analyze", response_model=CVAnalysisResponse)
 async def analyze_cv(
@@ -137,7 +183,7 @@ async def analyze_cv(
     
     return {"status": "processing", "message": "Đang phân tích CV"}
 
-@router.get("/{cv_id}/analysis", response_model=Dict[str, Any])
+@router.get("/{cv_id}/analyze", response_model=Dict[str, Any])
 async def get_analysis(
     *,
     cv_id: int,
@@ -157,18 +203,30 @@ async def get_analysis(
     if cv.analysis_status == "processing":
         return {"status": "processing", "message": "Đang phân tích CV"}
         
-    return {
+    response = {
         "status": cv.analysis_status,
+        "basic_analysis": {
+            "skills": cv.skills,
+            "experiences": cv.experiences,
+            "education": cv.education
+        },
         "career_analysis": {
             "strengths": cv.strengths,
             "weaknesses": cv.weaknesses,
-            "skill_gaps": cv.skill_gaps,
+            "career_paths": cv.career_goals,
             "recommended_careers": cv.recommended_career_paths,
+            "skill_gaps": cv.skill_gaps,
             "recommended_skills": cv.recommended_skills,
             "recommended_actions": cv.recommended_actions
         },
+        "analysis_status": cv.analysis_status,
         "last_analyzed_at": cv.last_analyzed_at
     }
+    
+    if cv.analysis_status == "failed":
+        response["error"] = cv.analysis_error
+        
+    return response
 
 @router.get("/list", response_model=List[CVInDB])
 def list_cvs(

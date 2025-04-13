@@ -1,4 +1,5 @@
 import logging
+import asyncio
 from typing import List
 import numpy as np
 from sentence_transformers import SentenceTransformer
@@ -31,13 +32,13 @@ class EmbeddingService:
         """
         if EmbeddingService._model is None:
             try:
-                EmbeddingService._model = SentenceTransformer('VoVanPhuc/sup-SimCSE-VietNamese-MultilingualMiniLMv2')
+                EmbeddingService._model = SentenceTransformer('VoVanPhuc/sup-SimCSE-VietNamese-phobert-base')
                 logger.info("Đã khởi tạo Vietnamese-English embedding model thành công")
             except Exception as e:
                 logger.error(f"Lỗi khi khởi tạo embedding model: {str(e)}")
                 raise
 
-    def create_embedding(self, text: str) -> List[float]:
+    async def create_embedding(self, text: str) -> List[float]:
         """
         Tạo embedding vector cho văn bản đầu vào.
         
@@ -48,31 +49,43 @@ class EmbeddingService:
             List[float]: Vector embedding (kích thước 384)
         """
         try:
+            logger.info(f"Bắt đầu tạo embedding cho text: {text[:50]}...")
+            
             # Kiểm tra cache
             redis_service = RedisService.get_instance()
             cache_key = redis_service.generate_cache_key("embedding", text[:50])
             cached_embedding = redis_service.get_cache(cache_key)
             
-            if cached_embedding:
+            if cached_embedding is not None:
+                logger.info(f"Cache hit cho key: {cache_key}")
                 return cached_embedding
+            else:
+                logger.info(f"Cache miss cho key: {cache_key}")
 
-            # Tạo embedding
-            embedding = self._model.encode(text)
+            # Tạo embedding (chạy trong ThreadPoolExecutor để không block event loop)
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor() as executor:
+                logger.info("Bắt đầu encode text với model...")
+                embedding = await asyncio.get_event_loop().run_in_executor(
+                    executor, self._model.encode, text
+                )
+                logger.info("Encode text thành công")
             
             # Chuẩn hóa vector (L2 normalization)
             embedding = embedding / np.linalg.norm(embedding)
             
             # Cache kết quả
             embedding_list = embedding.tolist()
-            redis_service.set_cache(cache_key, embedding_list, expiry=86400)  # Cache 24h
+            logger.info(f"Lưu embedding vào cache với key: {cache_key}")
+            await redis_service.set_cache(cache_key, embedding_list, expiry=86400)  # Cache 24h
             
             return embedding_list
             
         except Exception as e:
-            logger.error(f"Lỗi khi tạo embedding: {str(e)}")
+            logger.error(f"Lỗi khi tạo embedding: {str(e)}", exc_info=True)
             raise
 
-    def create_embeddings(self, texts: List[str]) -> List[List[float]]:
+    async def create_embeddings(self, texts: List[str]) -> List[List[float]]:
         """
         Tạo embedding vectors cho nhiều văn bản.
         
@@ -91,7 +104,7 @@ class EmbeddingService:
             
             for i, text in enumerate(texts):
                 cache_key = redis_service.generate_cache_key("embedding", text[:50])
-                cached_embedding = redis_service.get_cache(cache_key)
+                cached_embedding = await redis_service.get_cache(cache_key)
                 
                 if cached_embedding:
                     results.append(cached_embedding)
@@ -102,8 +115,11 @@ class EmbeddingService:
             
             # Nếu có texts chưa được cache
             if texts_to_encode:
-                # Tạo embeddings cho batch
-                embeddings = self._model.encode(texts_to_encode)
+                # Tạo embeddings cho batch trong ThreadPoolExecutor
+                with ThreadPoolExecutor() as executor:
+                    embeddings = await asyncio.get_event_loop().run_in_executor(
+                        executor, self._model.encode, texts_to_encode
+                    )
                 
                 # Chuẩn hóa vectors
                 embeddings = embeddings / np.linalg.norm(embeddings, axis=1, keepdims=True)
@@ -112,7 +128,7 @@ class EmbeddingService:
                 for idx, embedding in zip(indices_to_encode, embeddings):
                     embedding_list = embedding.tolist()
                     cache_key = redis_service.generate_cache_key("embedding", texts[idx][:50])
-                    redis_service.set_cache(cache_key, embedding_list, expiry=86400)
+                    await redis_service.set_cache(cache_key, embedding_list, expiry=86400)
                     results[idx] = embedding_list
             
             return results
@@ -121,7 +137,7 @@ class EmbeddingService:
             logger.error(f"Lỗi khi tạo embeddings: {str(e)}")
             raise
 
-    def cross_lingual_similarity(self, vi_text: str, en_text: str) -> float:
+    async def cross_lingual_similarity(self, vi_text: str, en_text: str) -> float:
         """
         Tính độ tương đồng giữa văn bản tiếng Việt và tiếng Anh.
         
@@ -139,26 +155,26 @@ class EmbeddingService:
             en_cache_key = redis_service.generate_cache_key("en_embedding", en_text[:50])
             
             # Kiểm tra cache cho embeddings
-            vi_embedding = redis_service.get_cache(vi_cache_key)
-            en_embedding = redis_service.get_cache(en_cache_key)
+            vi_embedding = await redis_service.get_cache(vi_cache_key)
+            en_embedding = await redis_service.get_cache(en_cache_key)
             
             # Tạo và cache embeddings nếu chưa có
             if not vi_embedding:
-                vi_embedding = self.create_embedding(vi_text)
-                redis_service.set_cache(vi_cache_key, vi_embedding, expiry=86400)
+                vi_embedding = await self.create_embedding(vi_text)
+                await redis_service.set_cache(vi_cache_key, vi_embedding, expiry=86400)
                 
             if not en_embedding:
-                en_embedding = self.create_embedding(en_text)
-                redis_service.set_cache(en_cache_key, en_embedding, expiry=86400)
+                en_embedding = await self.create_embedding(en_text)
+                await redis_service.set_cache(en_cache_key, en_embedding, expiry=86400)
             
             # Tính cosine similarity
-            return self.calculate_similarity(vi_embedding, en_embedding)
+            return await self.calculate_similarity(vi_embedding, en_embedding)
             
         except Exception as e:
             logger.error(f"Lỗi khi tính cross-lingual similarity: {str(e)}")
             raise
 
-    def calculate_similarity(self, embedding1: List[float], embedding2: List[float]) -> float:
+    async def calculate_similarity(self, embedding1: List[float], embedding2: List[float]) -> float:
         """
         Tính độ tương đồng cosine giữa hai embedding vectors.
         
@@ -170,14 +186,17 @@ class EmbeddingService:
             float: Độ tương đồng cosine (0-1)
         """
         try:
-            # Chuyển về numpy arrays
-            vec1 = np.array(embedding1)
-            vec2 = np.array(embedding2)
-            
-            # Tính cosine similarity
-            similarity = np.dot(vec1, vec2)
-            
-            return float(similarity)
+            # Tính toán trong ThreadPoolExecutor để không block event loop
+            with ThreadPoolExecutor() as executor:
+                def compute_similarity():
+                    vec1 = np.array(embedding1)
+                    vec2 = np.array(embedding2)
+                    similarity = np.dot(vec1, vec2)
+                    return float(similarity)
+                
+                return await asyncio.get_event_loop().run_in_executor(
+                    executor, compute_similarity
+                )
             
         except Exception as e:
             logger.error(f"Lỗi khi tính similarity: {str(e)}")

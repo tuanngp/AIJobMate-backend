@@ -1,7 +1,10 @@
 import json
+import logging
 from typing import Any, Optional
 from redis import Redis
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 class RedisService:
     _instance = None
