@@ -1,3 +1,4 @@
+import json
 from typing import Dict, Any
 from fastapi import Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
@@ -27,9 +28,18 @@ async def get_current_user(
         )
     
     try:
-        # Giả sử user info được encode dưới dạng JSON trong header
+        # Parse và xử lý user info
         user_info = json.loads(user_info)
-        return await auth_client.get_user_info(user_info)
+        
+        # Map thông tin user về đúng format
+        processed_info = {
+            "id": user_info.get("id"),  # id từ verify endpoint
+            "permissions": user_info.get("roles", []),  # roles -> permissions
+            "exp": user_info.get("exp"),
+            "type": user_info.get("type")
+        }
+        
+        return processed_info
     except json.JSONDecodeError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

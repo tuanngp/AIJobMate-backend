@@ -2,6 +2,4 @@
 # imported by Alembic
 from app.db.base_class import Base  # noqa
 from app.models.user import User  # noqa
-from app.models.career_profile import CareerProfile  # noqa
 from app.models.cv import CV  # noqa
-from app.models.career_pathway import CareerPathway  # noqa

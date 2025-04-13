@@ -37,7 +37,7 @@ def main():
     """
     parser = argparse.ArgumentParser(description="Chạy AI Career Advisor Service")
     parser.add_argument("--host", default="127.0.0.1", help="Host để bind server")
-    parser.add_argument("--port", type=int, default=8000, help="Port để bind server")
+    parser.add_argument("--port", type=int, default=8002, help="Port để bind server")
     parser.add_argument("--reload", action="store_true", help="Tự động reload khi code thay đổi")
     
     args = parser.parse_args()
@@ -49,7 +49,7 @@ def main():
     load_dotenv(dotenv_path=".env", override=True)
     
     logger.info(f"Chạy AI Career Advisor Service tại http://{args.host}:{args.port}")
-    logger.info("Truy cập http://localhost:8000/docs để xem Swagger UI API documentation")
+    logger.info("Truy cập http://localhost:8002/docs để xem Swagger UI API documentation")
     
     # Chạy ứng dụng
     uvicorn.run(

@@ -17,5 +17,4 @@ class User(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
-    career_profiles = relationship("CareerProfile", back_populates="user")
-    cvs = relationship("CV", back_populates="user")
+    cvs = relationship("CV", back_populates="user", cascade="all, delete-orphan")
