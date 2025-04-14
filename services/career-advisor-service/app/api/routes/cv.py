@@ -77,31 +77,24 @@ async def run_analysis(cv_id: int, db: Session):
     """
     Thực hiện phân tích CV trong background
     """
-    logger.info(f"=== Bắt đầu task phân tích CV {cv_id} ===")
     cv = None
     try:
-        logger.info(f"CV {cv_id}: Đang tìm CV trong database")
         cv = db.query(CV).filter(CV.id == cv_id).first()
         if not cv:
             logger.error(f"CV {cv_id} không tồn tại")
             return
         # Cập nhật trạng thái
-        logger.info(f"CV {cv_id}: Cập nhật trạng thái sang processing")
         cv.analysis_status = "processing"
         cv.last_analyzed_at = datetime.utcnow()
         db.commit()
-        logger.info(f"CV {cv_id}: Bắt đầu quá trình phân tích")
-        
         
         # Phân tích CV
         analysis_result = await CVProcessor.analyze_cv(cv_id, cv.extracted_text)
         
-        logger.info(f"CV {cv_id}: Nhận kết quả phân tích từ CVProcessor")
         if analysis_result.get("error"):
             logger.error(f"CV {cv_id}: Lỗi từ CVProcessor: {analysis_result['error_message']}")
             raise ValueError(analysis_result["error_message"])
             
-        logger.info(f"CV {cv_id}: Bắt đầu cập nhật thông tin cơ bản")
         # Cập nhật thông tin cơ bản
         basic_analysis = analysis_result.get("basic_analysis", {})
         cv.skills = basic_analysis.get("skills")

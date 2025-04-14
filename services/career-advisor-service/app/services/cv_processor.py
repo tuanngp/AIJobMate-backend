@@ -16,7 +16,7 @@ from app.services.openai_service import (
     identify_skill_gaps,
 )
 from app.services.embedding_service import EmbeddingService
-from app.services.pinecone_service import search_career_pathways
+from app.services.pinecone_service import search_career_pathways, store_career_pathway
 
 logger = logging.getLogger(__name__)
 
@@ -117,9 +117,17 @@ class CVProcessor:
             Optional[List[float]]: Vector embedding hoặc None nếu thất bại
         """
         try:
-            embedding_service = EmbeddingService.get_instance()
+            # Lấy instance của EmbeddingService
+            embedding_service = await EmbeddingService.get_instance()
             cv_text = f"{text}\n{json.dumps(basic_analysis)}"
+            
+            # Tạo embedding vector
             embedding_vector = await embedding_service.create_embedding(cv_text)
+            
+            # Đảm bảo kết quả không phải coroutine
+            if hasattr(embedding_vector, '__await__'):
+                embedding_vector = await embedding_vector
+                
             logger.info(f"CV {cv_id}: Tạo embedding vector thành công")
             return embedding_vector
         except Exception as e:
@@ -133,7 +141,10 @@ class CVProcessor:
         """
         try:
             # 1. Phân tích cơ bản CV và validate kết quả
-            basic_analysis = analyze_cv_content(text)
+            basic_analysis = await analyze_cv_content(text)
+            if hasattr(basic_analysis, '__await__'):
+                basic_analysis = await basic_analysis
+                
             if not basic_analysis or not isinstance(basic_analysis, dict):
                 raise ValueError("Không thể phân tích CV: Kết quả phân tích không hợp lệ")
 
@@ -170,14 +181,46 @@ class CVProcessor:
             # 4. Tìm kiếm career matches dựa trên embedding hoặc career analysis
             logger.info(f"CV {cv_id}: Bắt đầu tìm kiếm career matches")
             career_matches = []
+
+            # Lưu career recommendations vào Pinecone
             try:
+                basic_analysis_data = basic_analysis.get("analysis", {})
+                career_recommendations = basic_analysis_data.get("career_recommendations", [])
+                
+                # Xử lý tất cả career pathways cùng lúc
+                career_pathway_tasks = []
+                for rec in career_recommendations:
+                    pathway_id = f"career_{rec['position'].lower().replace(' ', '_')}"
+                    task = store_career_pathway(
+                        pathway_id=pathway_id,
+                        name=rec['position'],
+                        description=rec.get('reason', ''),
+                        required_skills=rec.get('required_skills', []),
+                        reason=rec.get('reason', ''),
+                        score=0.8
+                    )
+                    career_pathway_tasks.append((pathway_id, task))
+                
+                # Chờ tất cả tasks hoàn thành
+                for pathway_id, task in career_pathway_tasks:
+                    try:
+                        await task
+                        logger.info(f"Đã lưu thành công career pathway {pathway_id}")
+                    except Exception as e:
+                        logger.error(f"Lỗi khi lưu career pathway {pathway_id}: {str(e)}")
+            except Exception as e:
+                logger.error(f"Lỗi khi xử lý career pathways: {str(e)}")
                 if embedding_vector:
                     # Tìm kiếm dựa trên embedding vector
-                    career_matches = search_career_pathways(
-                        query="",
+                    career_matches = await search_career_pathways(
                         embedding_vector=embedding_vector,
+                        skills=all_skills,
                         top_k=5
                     )
+                    # Đảm bảo career_matches không phải là coroutine
+                    if hasattr(career_matches, '__await__'):
+                        career_matches = await career_matches
+                        
                     logger.info(f"CV {cv_id}: Tìm thấy {len(career_matches)} career matches từ embedding")
                 else:
                     # Sử dụng career paths từ career analysis làm fallback

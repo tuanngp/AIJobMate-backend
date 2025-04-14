@@ -42,7 +42,7 @@ def with_timeout(timeout_seconds: int = 30):
         return wrapper
     return decorator
 
-@retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(3))
+@retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(1))
 async def create_embedding(text: str) -> List[float]:
     """
     Tạo embedding vector cho văn bản đầu vào sử dụng sentence-transformers.
@@ -54,28 +54,44 @@ async def create_embedding(text: str) -> List[float]:
         List[float]: Vector embedding.
     """
     try:
+        logger.info("Bắt đầu tạo embedding vector...")
+        
         # Kiểm tra cache
         redis_service = RedisService.get_instance()
         cache_key = redis_service.generate_cache_key("embedding", text[:50])
-        cached_embedding = redis_service.get_cache(cache_key)
+        cached_embedding = await redis_service.get_cache(cache_key)
         
         if cached_embedding:
+            logger.info("Đã tìm thấy embedding trong cache")
             return cached_embedding
             
-        # Tạo embedding với sentence-transformers
-        embedding_service = EmbeddingService.get_instance()
-        embedding = embedding_service.create_embedding(text)
-        
-        # Lưu vào cache
-        redis_service.set_cache(cache_key, embedding, expiry=86400)  # Cache 24h
-        
-        return embedding
+        logger.info("Không tìm thấy trong cache, tạo embedding mới...")
+        try:
+            # Tạo embedding với sentence-transformers
+            embedding_service = await EmbeddingService.get_instance()
+            embedding = await embedding_service.create_embedding(text)
+            
+            if not isinstance(embedding, list):
+                raise ValueError("Embedding phải là một list")
+            
+            logger.info("Đã tạo embedding vector thành công")
+            
+            # Lưu vào cache
+            logger.info("Lưu embedding vào cache...")
+            await redis_service.set_cache(cache_key, embedding, expiry=86400)  # Cache 24h
+            logger.info("Hoàn thành tạo và cache embedding vector")
+            
+            return embedding
+            
+        except Exception as e:
+            logger.error(f"Lỗi khi tạo hoặc cache embedding: {str(e)}")
+            raise
     except Exception as e:
-        logger.error(f"Lỗi khi tạo embedding: {str(e)}")
+        logger.error(f"Lỗi khi tạo embedding: {str(e)}", exc_info=True)
         raise
 
 # Hàm để phân tích hồ sơ nghề nghiệp
-@retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(3))
+@retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(1))
 @with_timeout(timeout_seconds=60)
 async def analyze_career_profile(
     skills: List[str],
@@ -155,7 +171,7 @@ async def analyze_career_profile(
             "_".join(skills[:3]),  # Sử dụng 3 kỹ năng đầu tiên làm key
             "_".join(str(exp['position']) for exp in experiences[:2])  # 2 kinh nghiệm đầu
         )
-        cached_result = redis_service.get_cache(cache_key)
+        cached_result = await redis_service.get_cache(cache_key)
         
         if cached_result:
             return cached_result
@@ -199,8 +215,9 @@ async def analyze_career_profile(
         raise
 
 # Hàm để phân tích CV
-@retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(3))
-def analyze_cv_content(cv_text: str) -> Dict[str, Any]:
+@retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(1))
+@with_timeout(timeout_seconds=60)
+async def analyze_cv_content(cv_text: str) -> Dict[str, Any]:
     """
     Phân tích nội dung CV và trích xuất thông tin quan trọng.
     
@@ -210,10 +227,8 @@ def analyze_cv_content(cv_text: str) -> Dict[str, Any]:
     Returns:
         Dict[str, Any]: Kết quả phân tích CV với các thông tin được cấu trúc.
     """
-    logger.info(f"Bắt đầu phân tích nội dung CV")
     try:
         # Tạo prompt
-        logger.info("Chuẩn bị prompt cho OpenAI API")
         prompt = f"""
         Phân tích CV sau và trích xuất thông tin chi tiết theo cấu trúc:
 
@@ -287,24 +302,29 @@ def analyze_cv_content(cv_text: str) -> Dict[str, Any]:
         
         Đảm bảo phản hồi của bạn chỉ chứa JSON hợp lệ, không có văn bản giới thiệu hoặc giải thích.
         """
-        
         # Gọi API
-        logger.info("Gửi request đến OpenAI API")
-        response = client.chat.completions.create(
-            extra_headers=extra_headers,
-            model=settings.AI_MODEL,
-            messages=[
-                {"role": "system", "content": "Bạn là AI CV Analyzer, một hệ thống phân tích CV chuyên nghiệp. Bạn phân tích kỹ lưỡng và đưa ra nhận xét chi tiết về CV."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.3,
-            max_tokens=2500
-        )
-        
-        # Xử lý phản hồi
-        logger.info("Nhận response từ OpenAI API")
+        logger.info(f"Gửi request đến OpenAI API với model {settings.AI_MODEL}")
+        start_time = asyncio.get_event_loop().time()
+        try:
+            response = client.chat.completions.create(
+                extra_headers=extra_headers,
+                model=settings.AI_MODEL,
+                messages=[
+                    {"role": "system", "content": "Bạn là AI CV Analyzer, một hệ thống phân tích CV chuyên nghiệp. Bạn phân tích kỹ lưỡng và đưa ra nhận xét chi tiết về CV."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.3,
+                max_tokens=2500
+            )
+            end_time = asyncio.get_event_loop().time()
+            logger.info(f"OpenAI API trả về sau {end_time - start_time:.2f} giây")
+            
+            # Xử lý phản hồi
+            result_text = response.choices[0].message.content.strip()
+        except Exception as api_error:
+            logger.error(f"Lỗi khi gọi OpenAI API: {str(api_error)}", exc_info=True)
+            raise
         result_text = response.choices[0].message.content.strip()
-        logger.info("Bắt đầu xử lý JSON response")
         
         # Chuyển đổi phản hồi thành JSON
         try:
@@ -318,10 +338,8 @@ def analyze_cv_content(cv_text: str) -> Dict[str, Any]:
                     result_text = result_text.split("```")[0]
                     
             result_data = json.loads(result_text.strip())
-            logger.info("Parse JSON thành công")
             
             # Validate và đảm bảo format của result_data
-            logger.info("Bắt đầu validate kết quả")
             required_fields = {
                 "personal_info": dict,
                 "education": list,
@@ -336,8 +354,6 @@ def analyze_cv_content(cv_text: str) -> Dict[str, Any]:
                     result_data[field] = field_type()
                 elif not isinstance(result_data[field], field_type):
                     result_data[field] = field_type()
-            
-            logger.info("Validation các trường bắt buộc hoàn thành")
 
             # Đảm bảo cấu trúc của skills
             if "skills" in result_data:
@@ -361,7 +377,7 @@ def analyze_cv_content(cv_text: str) -> Dict[str, Any]:
         raise
 
 # Hàm để xác định khoảng cách kỹ năng
-@retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(3))
+@retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(1))
 @with_timeout(timeout_seconds=60)
 async def identify_skill_gaps(
     current_skills: List[str],

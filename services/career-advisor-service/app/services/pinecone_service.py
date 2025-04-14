@@ -2,12 +2,13 @@ import json
 import logging
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-import pinecone
+from pinecone import Pinecone, ServerlessSpec
 from tenacity import retry, stop_after_attempt, wait_random_exponential
-
+import asyncio
 from app.core.config import settings
 from app.services.redis_service import RedisService
 from app.services.openai_service import create_embedding
+
 
 # Cấu hình logging
 logger = logging.getLogger(__name__)
@@ -31,26 +32,40 @@ class PineconeClient:
         """
         Khởi tạo kết nối đến Pinecone Vector Database.
         """
+        logger.info("Bắt đầu khởi tạo Pinecone client...")
         try:
-            pinecone.init(
-                api_key=settings.PINECONE_API_KEY,
-                environment=settings.PINECONE_ENVIRONMENT
-            )
+            logger.info(f"Cấu hình Pinecone với environment: {settings.PINECONE_ENVIRONMENT}")
+            pc = Pinecone(api_key=settings.PINECONE_API_KEY)
+            logger.info("Đã khởi tạo Pinecone client thành công")
+            
+            # Kiểm tra danh sách index hiện có
+            logger.info("Đang kiểm tra danh sách indexes...")
+            existing_indexes = pc.list_indexes().names()
+            logger.info(f"Danh sách indexes hiện có: {existing_indexes}")
             
             # Kiểm tra và tạo index nếu chưa tồn tại
-            if settings.PINECONE_INDEX not in pinecone.list_indexes():
-                pinecone.create_index(
+            if settings.PINECONE_INDEX not in existing_indexes:
+                logger.info(f"Index {settings.PINECONE_INDEX} chưa tồn tại, đang tạo mới...")
+                pc.create_index(
                     name=settings.PINECONE_INDEX,
-                    dimension=1536,  # Kích thước vector cho text-embedding-ada-002
-                    metric="cosine"
+                    dimension=768,  # Kích thước vector cho sentence-transformers phobert-base
+                    metric="cosine",
+                    spec=ServerlessSpec(
+                        cloud='aws',
+                        region=settings.PINECONE_ENVIRONMENT
+                    )
                 )
-                logger.info(f"Đã tạo index {settings.PINECONE_INDEX} trong Pinecone")
+                logger.info(f"Đã tạo index {settings.PINECONE_INDEX} thành công")
+            else:
+                logger.info(f"Index {settings.PINECONE_INDEX} đã tồn tại")
             
             # Lưu index vào biến static
-            PineconeClient._index = pinecone.Index(settings.PINECONE_INDEX)
+            logger.info(f"Đang kết nối đến index {settings.PINECONE_INDEX}...")
+            PineconeClient._index = pc.Index(settings.PINECONE_INDEX)
+            logger.info("Đã kết nối thành công đến Pinecone index")
             
         except Exception as e:
-            logger.error(f"Lỗi khi khởi tạo Pinecone: {str(e)}")
+            logger.error(f"Lỗi chi tiết khi khởi tạo Pinecone: {str(e)}", exc_info=True)
             raise
 
     def get_index(self):
@@ -63,16 +78,15 @@ class PineconeClient:
 
 # Lưu career pathway vào Pinecone
 @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(3))
-def store_career_pathway(
+async def store_career_pathway(
     pathway_id: str,
     name: str,
     description: str,
-    industry: str,
     required_skills: List[str],
-    required_experience: int,
-    salary_range_min: Optional[float] = None,
-    salary_range_max: Optional[float] = None,
-    growth_potential: Optional[float] = None
+    reason: str = "",
+    industry: str = "Technology",
+    required_experience: int = 0,
+    score: float = 0.8
 ) -> bool:
     """
     Lưu thông tin career pathway vào Pinecone.
@@ -93,27 +107,29 @@ def store_career_pathway(
     """
     try:
         # Tạo text để embedding
-        text_to_embed = f"{name}. {description}. Industry: {industry}. Required skills: {', '.join(required_skills)}."
-        
         # Tạo embedding vector
-        embedding = create_embedding(text_to_embed)
+        text_to_embed = f"{name}. {description}. Required skills: {', '.join(required_skills)}. {reason}"
+        try:
+            embedding = await create_embedding(text_to_embed)
+            if isinstance(embedding, list):
+                logger.info(f"Tạo embedding vector thành công cho {name}")
+            else:
+                logger.error(f"Embedding vector không đúng định dạng cho {name}")
+                raise ValueError("Embedding vector phải là list")
+        except Exception as e:
+            logger.error(f"Lỗi khi tạo embedding cho {name}: {str(e)}")
+            raise
         
         # Chuẩn bị metadata
         metadata = {
             "name": name,
             "description": description,
-            "industry": industry,
             "required_skills": json.dumps(required_skills),
-            "required_experience": required_experience
+            "reason": reason,
+            "industry": industry,
+            "required_experience": required_experience,
+            "score": score
         }
-        
-        # Thêm thông tin tùy chọn
-        if salary_range_min is not None:
-            metadata["salary_range_min"] = salary_range_min
-        if salary_range_max is not None:
-            metadata["salary_range_max"] = salary_range_max
-        if growth_potential is not None:
-            metadata["growth_potential"] = growth_potential
         
         # Lấy Pinecone index từ singleton
         index = PineconeClient.get_instance().get_index()
@@ -137,8 +153,9 @@ def store_career_pathway(
 
 # Tìm kiếm career pathway phù hợp
 @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(3))
-def search_career_pathways(
-    query: str,
+async def search_career_pathways(
+    query: str = "",
+    embedding_vector: Optional[List[float]] = None,
     skills: Optional[List[str]] = None,
     industries: Optional[List[str]] = None,
     top_k: int = 5
@@ -156,9 +173,14 @@ def search_career_pathways(
         List[Dict[str, Any]]: Danh sách các career pathway phù hợp.
     """
     try:
-        # Tạo embedding vector cho truy vấn
-        query_embedding = create_embedding(query)
+        # Sử dụng embedding_vector nếu được cung cấp, nếu không tạo mới từ query
+        query_embedding = embedding_vector
+        if query_embedding is None and query:
+            query_embedding = await create_embedding(query)
         
+        if query_embedding is None:
+            raise ValueError("Cần cung cấp embedding_vector hoặc query không rỗng")
+
         # Tạo bộ lọc nếu cần
         filter_dict = {}
         if industries:
@@ -171,34 +193,45 @@ def search_career_pathways(
             query[:50],
             "_".join(industries) if industries else "all"
         )
-        cached_results = redis_service.get_cache(cache_key)
+        cached_results = await redis_service.get_cache(cache_key)
         
         if cached_results:
             return cached_results
 
         # Kết nối đến Pinecone nếu không có trong cache
+        logger.info("Bắt đầu kết nối đến Pinecone...")
         index = PineconeClient.get_instance().get_index()
         
         # Thực hiện tìm kiếm
-        results = index.query(
-            vector=query_embedding,
-            top_k=top_k,
-            namespace="career_pathways",
-            filter=filter_dict if filter_dict else None,
-            include_metadata=True
-        )
-        
+        logger.info(f"Thực hiện tìm kiếm với top_k={top_k}, filter={filter_dict}")
+        try:
+            results = index.query(
+                vector=query_embedding,
+                top_k=top_k,
+                namespace="career_pathways",
+                filter=filter_dict if filter_dict else None,
+                include_metadata=True
+            )
+            logger.info(f"Tìm thấy {len(results.matches)} kết quả từ Pinecone")
+        except Exception as query_error:
+            logger.error(f"Lỗi khi query Pinecone: {str(query_error)}", exc_info=True)
+            raise
         # Xử lý kết quả
         pathways = []
-        for match in results.matches:
+        logger.info("Bắt đầu xử lý kết quả tìm kiếm...")
+        
+        for i, match in enumerate(results.matches):
             # Parse required_skills từ JSON string
             required_skills = json.loads(match.metadata.get("required_skills", "[]"))
+            logger.debug(f"Career pathway {i+1}: {match.metadata.get('name')} - Score: {match.score}")
             
             # Tính điểm phù hợp kỹ năng nếu có
             skill_match_score = 0
             if skills:
                 matching_skills = set(skills) & set(required_skills)
                 skill_match_score = len(matching_skills) / len(required_skills) if required_skills else 0
+                logger.debug(f"Skill match score cho {match.metadata.get('name')}: {skill_match_score}")
+            
             
             # Tạo đối tượng pathway
             pathway = {
@@ -223,8 +256,10 @@ def search_career_pathways(
             pathways.append(pathway)
         
         # Cache kết quả trong 1 giờ
-        redis_service.set_cache(cache_key, pathways, expiry=3600)
+        logger.info(f"Lưu {len(pathways)} kết quả vào Redis cache với key: {cache_key}")
+        await redis_service.set_cache(cache_key, pathways, expiry=3600)
+        logger.info("Hoàn thành tìm kiếm career pathways")
         return pathways
     except Exception as e:
-        logger.error(f"Lỗi khi tìm kiếm career pathways: {str(e)}")
-        raise 
+        logger.error(f"Lỗi khi tìm kiếm career pathways: {str(e)}", exc_info=True)
+        raise

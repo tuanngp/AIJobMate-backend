@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor
 import logging
 import asyncio
 from typing import List
@@ -13,30 +14,33 @@ class EmbeddingService:
     _model = None
 
     @classmethod
-    def get_instance(cls) -> 'EmbeddingService':
+    async def get_instance(cls) -> 'EmbeddingService':
+        """
+        Get singleton instance với async initialization
+        """
         if cls._instance is None:
             cls._instance = cls()
+            await cls._instance.initialize()
         return cls._instance
 
-    def __init__(self):
+    async def initialize(self):
         """
-        Khởi tạo model sentence-transformer.
-        Sử dụng mô hình VoVanPhuc/sup-SimCSE-VietNamese-MultilingualMiniLMv2 vì:
-        - Được huấn luyện trên dữ liệu song ngữ Việt-Anh
-        - Base model là multilingual-MiniLM-L12-v2
-        - Hiểu tốt cả tiếng Việt và tiếng Anh
-        - Hỗ trợ cross-lingual semantic search
-        - Kích thước nhỏ (~120MB)
-        - Tốc độ xử lý nhanh
-        - Phù hợp cho ứng dụng tuyển dụng đa ngôn ngữ
+        Async initialization
         """
-        if EmbeddingService._model is None:
+        if self._model is None:
             try:
-                EmbeddingService._model = SentenceTransformer('VoVanPhuc/sup-SimCSE-VietNamese-phobert-base')
+                self._model = SentenceTransformer('VoVanPhuc/sup-SimCSE-VietNamese-phobert-base')
                 logger.info("Đã khởi tạo Vietnamese-English embedding model thành công")
             except Exception as e:
                 logger.error(f"Lỗi khi khởi tạo embedding model: {str(e)}")
                 raise
+
+    def __init__(self):
+        """
+        Khởi tạo instance với model là None, sẽ được initialize sau
+        """
+        if self._instance is not None:
+            raise Exception("EmbeddingService là singleton, sử dụng get_instance()")
 
     async def create_embedding(self, text: str) -> List[float]:
         """
@@ -54,7 +58,7 @@ class EmbeddingService:
             # Kiểm tra cache
             redis_service = RedisService.get_instance()
             cache_key = redis_service.generate_cache_key("embedding", text[:50])
-            cached_embedding = redis_service.get_cache(cache_key)
+            cached_embedding = await redis_service.get_cache(cache_key)
             
             if cached_embedding is not None:
                 logger.info(f"Cache hit cho key: {cache_key}")
@@ -97,11 +101,13 @@ class EmbeddingService:
         """
         try:
             # Kiểm tra cache cho từng text
+            # Khởi tạo Redis service
             redis_service = RedisService.get_instance()
             results = []
             texts_to_encode = []
             indices_to_encode = []
             
+            # Kiểm tra cache cho mỗi text
             for i, text in enumerate(texts):
                 cache_key = redis_service.generate_cache_key("embedding", text[:50])
                 cached_embedding = await redis_service.get_cache(cache_key)
