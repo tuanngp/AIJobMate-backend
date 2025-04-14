@@ -24,7 +24,7 @@ class GatewayHandler:
         try:
             headers = {"Authorization": f"Bearer {token}"}
             response = await self.client.get(
-                f"{settings.AUTH_SERVICE_URL}/api/v1/auth/verify",
+                f"{settings.AUTH_SERVICE_URL}/auth/verify",
                 headers=headers
             )
 
@@ -99,7 +99,7 @@ class GatewayHandler:
 
         # Setup headers to forward
         headers = dict(request.headers)
-        auth_header = headers.get("Authorization")
+        auth_header = headers.get("authorization")
 
         # Verify token nếu có và không phải là request tới /auth/login hoặc /auth/register
         if auth_header and not request.url.path.endswith(("/login", "/register")):

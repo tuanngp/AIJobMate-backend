@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from datetime import datetime
@@ -142,6 +142,54 @@ async def refresh_token(
             detail=str(e),
             headers={"WWW-Authenticate": "Bearer"},
         )
+@router.get("/verify")
+async def verify_token_endpoint(request: Request) -> Any:
+    """
+    Verify token and return user info.
+    This endpoint is used by API Gateway to verify tokens.
+    """
+    
+    # Get authorization header
+    auth_header = request.headers.get("authorization")
+    
+    try:
+        if not auth_header:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authorization header is missing",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+            
+        if not auth_header.startswith("Bearer "):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authorization format. Use Bearer token",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+            
+        # Extract token
+        token = auth_header.split(" ")[1]
+        
+        # Verify token
+        token_data = verify_token(token, "access")
+        
+        # Return user info
+        response = {
+            "id": token_data.sub,
+            "roles": token_data.roles,
+            "exp": token_data.exp.timestamp(),
+            "type": token_data.type
+        }
+        return response
+        
+    except ValueError as e:
+        print(f"[ERROR] Token verification failed: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(e),
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
 
 @router.post("/logout")
 async def logout(

@@ -9,9 +9,9 @@ class Settings(BaseSettings):
     PORT: int = 8000
     
     # Service URLs
-    AUTH_SERVICE_URL: str = "http://auth-service:8001"
-    CAREER_ADVISOR_SERVICE_URL: str = "http://career-advisor-service:8002"
-    FRONTEND_URL: str = "http://localhost:3000"
+    AUTH_SERVICE_URL: str = os.getenv("AUTH_SERVICE_URL", "http://localhost:8001")
+    CAREER_ADVISOR_SERVICE_URL: str = os.getenv("CAREER_ADVISOR_SERVICE_URL", "http://localhost:8002")
+    FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
     # CORS
     ALLOWED_ORIGINS: List[str] = ["http://localhost:3000"]
@@ -33,15 +33,42 @@ class Settings(BaseSettings):
 
     # Service paths
     AUTH_PATHS: List[str] = [
-        "/api/v1/auth",
-        "/api/v1/users",
-        "/api/v1/rbac"
+        "/auth/register",
+        "/auth/login",
+        "/auth/refresh",
+        "/auth/logout",
+        "/auth/verify",
+        "/users/me",
+        "/users",
+        "/users/{user_id}",
+        "/users/{user_id}/disable",
+        "/users/{user_id}/enable",
+        "/health"
     ]
     
     CAREER_ADVISOR_PATHS: List[str] = [
+        # Base paths
+        "/api/v1/users",
+        "/api/v1/cv",
         "/api/v1/career-profiles",
         "/api/v1/career-advisor",
-        "/api/v1/cv"
+        # User endpoints
+        "/api/v1/users/me",
+        "/api/v1/users/{user_id}",
+        # CV endpoints
+        "/api/v1/cv/upload",
+        "/api/v1/cv/list",
+        "/api/v1/cv/{cv_id}",
+        "/api/v1/cv/{cv_id}/analyze",
+        # Career profile endpoints
+        "/api/v1/career-profiles/",
+        "/api/v1/career-profiles/{profile_id}",
+        # Career advisor endpoints
+        "/api/v1/career-advisor/analyze",
+        "/api/v1/career-advisor/analyze/{task_id}",
+        "/api/v1/career-advisor/recommendations",
+        # Health check
+        "health"
     ]
 
     # Monitoring

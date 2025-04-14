@@ -23,8 +23,6 @@ BASE_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(BASE_PATH)
 
 from app.db.base import Base
-from app.models import user, career_profile  # noqa
-
 target_metadata = Base.metadata
 
 # other values from the config, defined by the needs of env.py,

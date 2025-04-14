@@ -19,7 +19,6 @@ def get_password_hash(password: str) -> str:
 def create_token(subject: Union[str, Any], token_type: str, expires_delta: timedelta = None, roles: list[str] = None) -> str:
     """Create a JWT token."""
     current_time = datetime.now(timezone.utc)
-    # print(f"[DEBUG] Creating token at UTC time: {current_time}")
     
     if expires_delta:
         expire = current_time + expires_delta
@@ -27,7 +26,6 @@ def create_token(subject: Union[str, Any], token_type: str, expires_delta: timed
         expire_minutes = (settings.ACCESS_TOKEN_EXPIRE_MINUTES if token_type == "access"
                        else settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60)
         expire = current_time + timedelta(minutes=expire_minutes)
-        # print(f"[DEBUG] Token will expire at UTC time: {expire} (in {expire_minutes} minutes)")
     
     to_encode = {
         "sub": str(subject),
@@ -37,7 +35,6 @@ def create_token(subject: Union[str, Any], token_type: str, expires_delta: timed
         "jti": str(uuid.uuid4()),
         "roles": roles or []
     }
-    # print(f"[DEBUG] Token payload: {to_encode}")
     
     encoded_jwt = jwt.encode(
         to_encode,
@@ -50,7 +47,6 @@ def verify_token(token: str, token_type: str) -> TokenPayload:
     """Verify and decode a JWT token."""
     try:
         current_time = datetime.now(timezone.utc)
-        # print(f"[DEBUG] Verifying token at UTC time: {current_time}")
         
         secret_key = settings.JWT_SECRET_KEY if token_type == "access" else settings.JWT_REFRESH_SECRET_KEY
         payload = jwt.decode(token, secret_key, algorithms=[settings.ALGORITHM])
@@ -63,15 +59,11 @@ def verify_token(token: str, token_type: str) -> TokenPayload:
         iat_time = datetime.fromtimestamp(payload["iat"], tz=timezone.utc)
         payload["exp"] = exp_time
         payload["iat"] = iat_time
-        
-        # print(f"[DEBUG] Token created at: {iat_time}")
-        # print(f"[DEBUG] Token expires at: {exp_time}")
             
         token_data = TokenPayload(**payload)
         
         if token_data.exp < current_time:
             time_diff = current_time - token_data.exp
-            # print(f"[DEBUG] Token expired by {time_diff.total_seconds()} seconds")
             raise jwt.JWTError("Token has expired")
             
         return token_data
