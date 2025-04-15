@@ -10,3 +10,4 @@ psycopg2-binary==2.9.10
 alembic==1.15.2
 pydantic[email]
 python-multipart==0.0.20
+bcrypt==4.0.1

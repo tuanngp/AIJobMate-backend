@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     ALLOWED_ORIGINS: List[str] = [
         "http://localhost:3000",  # Frontend
         "http://localhost:8000",  # API Gateway
+        "http://localhost:8003",  # Interview Service
     ]
     
     # JWT settings
