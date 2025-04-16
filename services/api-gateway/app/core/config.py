@@ -66,7 +66,18 @@ class Settings(BaseSettings):
             "/career-advisor/analyze/{task_id}",
             "/career-advisor/recommendations",
             "/health"
-        ])
+        ]),
+        "interview": (INTERVIEW_SERVICE_URL, [
+            "/api/v1/interviews",
+            "/api/v1/interviews/{interview_id}",
+            "/api/v1/interviews/{interview_id}/questions",
+            "/api/v1/interviews/{interview_id}/questions/{question_id}",
+            "/api/v1/interviews/{interview_id}/questions/{question_id}/answer",
+            "/api/v1/practice-sessions",
+            "/api/v1/practice-sessions/{session_id}",
+            "/api/v1/practice-sessions/{session_id}/answer",
+            "/health"
+        ]),
     }
     
     PUBLIC_PATHS: List[str] = [
@@ -77,21 +88,6 @@ class Settings(BaseSettings):
     ]
     
     NO_PREFIX_PATHS: List[str] = [
-        "/health"
-    ]
-
-    INTERVIEW_PATHS: List[str] = [
-        # Base paths
-        "/api/v1/interviews",
-        "/api/v1/interviews/{interview_id}",
-        "/api/v1/interviews/{interview_id}/questions",
-        "/api/v1/interviews/{interview_id}/questions/{question_id}",
-        "/api/v1/interviews/{interview_id}/questions/{question_id}/answer",
-        # Practice session paths
-        "/api/v1/practice-sessions",
-        "/api/v1/practice-sessions/{session_id}",
-        "/api/v1/practice-sessions/{session_id}/answer",
-        # Health check
         "/health"
     ]
 

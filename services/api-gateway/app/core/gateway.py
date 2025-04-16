@@ -18,6 +18,7 @@ class GatewayHandler:
         Verify JWT token với auth service.
         """
         try:
+            print(f"{settings.AUTH_SERVICE_URL}{settings.API_PREFIX}/auth/verify")
             headers = {"Authorization": f"Bearer {token}"}
             response = await self.client.get(
                 f"{settings.AUTH_SERVICE_URL}{settings.API_PREFIX}/auth/verify",
