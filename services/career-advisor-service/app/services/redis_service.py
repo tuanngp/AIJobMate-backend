@@ -23,7 +23,6 @@ class RedisService:
         Initialize Redis connection pool
         """
         if not hasattr(self, 'redis_client'):
-            logger.info(f"Khởi tạo Redis connection pool - Host: {settings.REDIS_HOST}, Port: {settings.REDIS_PORT}")
             try:
                 self.pool = ConnectionPool(
                     host=settings.REDIS_HOST,
@@ -32,11 +31,9 @@ class RedisService:
                     decode_responses=True
                 )
                 self.redis_client = Redis(connection_pool=self.pool)
-                logger.info("Redis connection pool được khởi tạo thành công")
             except Exception as e:
                 logger.error(f"Lỗi khi khởi tạo Redis connection: {str(e)}", exc_info=True)
                 raise
-            logger.info("Redis connection pool initialized")
         
     async def set_cache(self, key: str, value: Any, expiry: int = 3600) -> bool:
         """

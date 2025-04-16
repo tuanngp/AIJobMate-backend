@@ -1,5 +1,4 @@
 from datetime import datetime
-from typing import Optional
 from sqlalchemy.orm import Session
 from app.models.token import RefreshTokenDB, RevokedTokenDB
 from app.core.security import verify_token

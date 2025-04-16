@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 from app.api.routes import router as api_router
 from app.core.config import settings
-from app.db.session import engine, SessionLocal
+from app.db.session import engine
 from app.db.base import Base
 from prometheus_client import make_asgi_app
 from contextlib import asynccontextmanager

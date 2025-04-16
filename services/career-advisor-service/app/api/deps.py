@@ -3,7 +3,6 @@ from typing import Dict, Any
 from fastapi import Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 from app.db.session import SessionLocal
-from app.clients.auth_client import auth_client
 
 # Dependency để lấy DB session
 def get_db() -> Session:

@@ -32,20 +32,14 @@ class PineconeClient:
         """
         Khởi tạo kết nối đến Pinecone Vector Database.
         """
-        logger.info("Bắt đầu khởi tạo Pinecone client...")
         try:
-            logger.info(f"Cấu hình Pinecone với environment: {settings.PINECONE_ENVIRONMENT}")
             pc = Pinecone(api_key=settings.PINECONE_API_KEY)
-            logger.info("Đã khởi tạo Pinecone client thành công")
             
             # Kiểm tra danh sách index hiện có
-            logger.info("Đang kiểm tra danh sách indexes...")
             existing_indexes = pc.list_indexes().names()
-            logger.info(f"Danh sách indexes hiện có: {existing_indexes}")
             
             # Kiểm tra và tạo index nếu chưa tồn tại
             if settings.PINECONE_INDEX not in existing_indexes:
-                logger.info(f"Index {settings.PINECONE_INDEX} chưa tồn tại, đang tạo mới...")
                 pc.create_index(
                     name=settings.PINECONE_INDEX,
                     dimension=768,  # Kích thước vector cho sentence-transformers phobert-base
@@ -55,14 +49,9 @@ class PineconeClient:
                         region=settings.PINECONE_ENVIRONMENT
                     )
                 )
-                logger.info(f"Đã tạo index {settings.PINECONE_INDEX} thành công")
-            else:
-                logger.info(f"Index {settings.PINECONE_INDEX} đã tồn tại")
             
             # Lưu index vào biến static
-            logger.info(f"Đang kết nối đến index {settings.PINECONE_INDEX}...")
             PineconeClient._index = pc.Index(settings.PINECONE_INDEX)
-            logger.info("Đã kết nối thành công đến Pinecone index")
             
         except Exception as e:
             logger.error(f"Lỗi chi tiết khi khởi tạo Pinecone: {str(e)}", exc_info=True)
@@ -84,7 +73,7 @@ async def store_career_pathway(
     description: str,
     required_skills: List[str],
     reason: str = "",
-    industry: str = "Technology",
+    industry: str = "",
     required_experience: int = 0,
     score: float = 0.8
 ) -> bool:
@@ -199,11 +188,9 @@ async def search_career_pathways(
             return cached_results
 
         # Kết nối đến Pinecone nếu không có trong cache
-        logger.info("Bắt đầu kết nối đến Pinecone...")
         index = PineconeClient.get_instance().get_index()
         
         # Thực hiện tìm kiếm
-        logger.info(f"Thực hiện tìm kiếm với top_k={top_k}, filter={filter_dict}")
         try:
             results = index.query(
                 vector=query_embedding,
@@ -212,13 +199,11 @@ async def search_career_pathways(
                 filter=filter_dict if filter_dict else None,
                 include_metadata=True
             )
-            logger.info(f"Tìm thấy {len(results.matches)} kết quả từ Pinecone")
         except Exception as query_error:
             logger.error(f"Lỗi khi query Pinecone: {str(query_error)}", exc_info=True)
             raise
         # Xử lý kết quả
         pathways = []
-        logger.info("Bắt đầu xử lý kết quả tìm kiếm...")
         
         for i, match in enumerate(results.matches):
             # Parse required_skills từ JSON string
@@ -256,9 +241,7 @@ async def search_career_pathways(
             pathways.append(pathway)
         
         # Cache kết quả trong 1 giờ
-        logger.info(f"Lưu {len(pathways)} kết quả vào Redis cache với key: {cache_key}")
         await redis_service.set_cache(cache_key, pathways, expiry=3600)
-        logger.info("Hoàn thành tìm kiếm career pathways")
         return pathways
     except Exception as e:
         logger.error(f"Lỗi khi tìm kiếm career pathways: {str(e)}", exc_info=True)

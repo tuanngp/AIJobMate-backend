@@ -22,33 +22,3 @@ class RevokedTokenDB(Base):
     expires_at = Column(DateTime)
     revoked_at = Column(DateTime, default=datetime.utcnow)
     reason = Column(String, nullable=True)
-
-# Pydantic models for request/response
-class Token(BaseModel):
-    access_token: str
-    refresh_token: str
-    token_type: str = "bearer"
-
-class TokenPayload(BaseModel):
-    sub: int  # user id
-    exp: datetime
-    iat: datetime
-    type: str  # "access" or "refresh"
-    roles: list[str]
-
-class TokenData(BaseModel):
-    user_id: int
-    roles: list[str]
-
-class RefreshToken(BaseModel):
-    refresh_token: str
-
-class RevokedToken(BaseModel):
-    jti: str
-    user_id: int
-    expires_at: datetime
-    revoked_at: datetime = datetime.utcnow()
-    reason: Optional[str] = None
-
-    class Config:
-        from_attributes = True

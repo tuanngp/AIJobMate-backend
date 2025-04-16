@@ -1,6 +1,6 @@
 from datetime import datetime
-from typing import Optional, List, Dict, Any
-from pydantic import BaseModel
+from typing import Optional, List, Dict, Any, Union
+from pydantic import BaseModel, Field
 
 
 class CVBase(BaseModel):
@@ -8,55 +8,11 @@ class CVBase(BaseModel):
     file_type: str
 
 
-class CVCreate(CVBase):
-    pass
-
-
-class CVUpdate(CVBase):
-    extracted_text: Optional[str] = None
-
-
-class CareerPath(BaseModel):
-    role: str
-    confidence: float
-    reasons: List[str]
-    requirements: List[str]
-    salary_range: Optional[Dict[str, float]]
-
-
-class SkillGap(BaseModel):
-    skill: str
-    importance: str
-    development_suggestion: str
-
-
-class CareerAnalysis(BaseModel):
-    strengths: Optional[List[str]] = None
-    weaknesses: Optional[List[str]] = None
-    skill_gaps: Optional[List[SkillGap]] = None
-    recommended_careers: Optional[List[CareerPath]] = None
-    recommended_skills: Optional[List[Dict[str, str]]] = None
-    recommended_actions: Optional[List[Dict[str, str]]] = None
-    last_analyzed_at: Optional[datetime] = None
-
-
 class CVInDB(CVBase):
     id: int
-    user_id: int
-    original_content: Optional[str] = None
-    extracted_text: str
     
-    # Profile data
-    skills: Optional[List[str]] = None
-    experiences: Optional[List[Dict[str, Any]]] = None
-    education: Optional[List[Dict[str, Any]]] = None
-    career_goals: Optional[List[str]] = None
-    preferred_industries: Optional[List[str]] = None
-    
-    # Analysis results
     analysis_status: Optional[str] = None
     analysis_error: Optional[str] = None
-    analysis_task_id: Optional[str] = None
     last_analyzed_at: Optional[datetime] = None
     
     created_at: datetime
@@ -66,16 +22,201 @@ class CVInDB(CVBase):
         from_attributes = True
 
 
-class CV(CVInDB):
-    career_analysis: Optional[CareerAnalysis] = None
-
-
 class CVAnalysisResponse(BaseModel):
     status: str
     message: str
+    
+    
+class PersonalInfo(BaseModel):
+    name: str
+    email: str
+    phone: str
+    location: str
 
 
-class CVAnalysisResult(BaseModel):
-    status: str
+class Education(BaseModel):
+    degree: str
+    institution: str
+    year: str
+    major: str
+    achievements: List[str]
+
+
+class Certification(BaseModel):
+    name: str
+    issuer: str
+    year: str
+
+
+class Experience(BaseModel):
+    position: str
+    company: str
+    duration: str
+    responsibilities: List[str]
+    achievements: List[str]
+
+
+class Skills(BaseModel):
+    technical: List[str]
+    soft: List[str]
+    languages: List[str]
+
+
+class CareerRecommendation(BaseModel):
+    industry: str
+    position: str
+    description: str
+    reason: str
+    required_skills: List[str]
+    required_experience: int
+    score: float
+
+
+class DevelopmentSuggestion(BaseModel):
+    area: str
+    suggestion: str
+    resources: List[str]
+
+
+class BasicAnalysis(BaseModel):
+    experience_level: str
+    strengths: List[str]
+    weaknesses: List[str]
+    career_recommendations: List[CareerRecommendation]
+    career_goals: List[str]
+    development_suggestions: List[DevelopmentSuggestion]
+
+
+class SkillGap(BaseModel):
+    skill: str
+    importance: str
+    reason: str
+
+
+class CareerPath(BaseModel):
+    path: str
+    fit_score: float
+    description: str
+
+
+class RecommendedSkill(BaseModel):
+    skill: str
+    reason: str
+
+
+class RecommendedAction(BaseModel):
+    action: str
+    priority: str
+    description: str
+
+
+class CareerMatch(BaseModel):
+    id: str
+    name: str
+    description: str
+    industry: str
+    required_skills: List[str]
+    required_experience: float
+    similarity_score: float
+    skill_match_score: float
+
+
+class DetailedMetrics(BaseModel):
+    action_verbs_used: int
+    quantified_achievements: int
+    avg_bullets_per_role: float
+    keyword_density: float
+
+
+class SectionScore(BaseModel):
+    score: int
+    feedback: List[str]
+
+
+class SectionScores(BaseModel):
+    personal_info: SectionScore
+    education: SectionScore
+    experience: SectionScore
+    skills: SectionScore
+
+
+class LanguageQuality(BaseModel):
+    score: int
+    strengths: List[str]
+    improvements: List[str]
+
+
+class ATSCompatibility(BaseModel):
+    score: int
+    issues: List[str]
+    keywords_missing: List[str]
+    format_suggestions: List[str]
+
+
+class ImprovementPriority(BaseModel):
+    area: str
+    priority: str
+    current_score: int
+    potential_impact: float
+    suggestions: List[str]
+
+
+class Completeness(BaseModel):
+    score: int
+    missing_sections: List[str]
+    improvement_suggestions: List[str]
+
+
+class Formatting(BaseModel):
+    score: int
+    issues: List[str]
+    positive_points: List[str]
+
+
+class QualityAssessment(BaseModel):
+    overall: float
+    completeness: Completeness
+    formatting: Formatting
+    section_scores: SectionScores
+    language_quality: LanguageQuality
+    ats_compatibility: ATSCompatibility
+    improvement_priority: List[ImprovementPriority]
+
+
+class CareerAnalysis(BaseModel):
+    strengths: List[str]
+    weaknesses: List[str]
+    skill_gaps: List[SkillGap]
+    career_paths: List[CareerPath]
+    recommended_skills: List[RecommendedSkill]
+    recommended_actions: List[RecommendedAction]
+    analysis_summary: str
+    career_matches: List[CareerMatch]
+    preferred_industries: List[str]
+
+
+class BasicAnalysisResponse(BaseModel):
+    personal_info: PersonalInfo
+    education: List[Education]
+    certifications: List[Certification]
+    experiences: List[Experience]
+    skills: Skills
+    analysis: BasicAnalysis
+
+
+class Metrics(BaseModel):
+    detailed: DetailedMetrics
+    word_count: int
+    sections_count: int
+
+
+class ResumeAnalysisResponse(BaseModel):
+    status: str = Field(..., description="Analysis status, e.g., 'completed'")
+    basic_analysis: BasicAnalysisResponse
     career_analysis: CareerAnalysis
-    last_analyzed_at: Optional[datetime] = None
+    quality_assessment: QualityAssessment
+    metrics: Metrics
+    analysis_status: str
+    last_analyzed_at: datetime
+    created_at: datetime
+    updated_at: datetime

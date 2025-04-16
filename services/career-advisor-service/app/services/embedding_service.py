@@ -30,7 +30,6 @@ class EmbeddingService:
         if self._model is None:
             try:
                 self._model = SentenceTransformer('VoVanPhuc/sup-SimCSE-VietNamese-phobert-base')
-                logger.info("Đã khởi tạo Vietnamese-English embedding model thành công")
             except Exception as e:
                 logger.error(f"Lỗi khi khởi tạo embedding model: {str(e)}")
                 raise
@@ -53,7 +52,6 @@ class EmbeddingService:
             List[float]: Vector embedding (kích thước 384)
         """
         try:
-            logger.info(f"Bắt đầu tạo embedding cho text: {text[:50]}...")
             
             # Kiểm tra cache
             redis_service = RedisService.get_instance()
@@ -61,26 +59,20 @@ class EmbeddingService:
             cached_embedding = await redis_service.get_cache(cache_key)
             
             if cached_embedding is not None:
-                logger.info(f"Cache hit cho key: {cache_key}")
                 return cached_embedding
-            else:
-                logger.info(f"Cache miss cho key: {cache_key}")
 
             # Tạo embedding (chạy trong ThreadPoolExecutor để không block event loop)
             from concurrent.futures import ThreadPoolExecutor
             with ThreadPoolExecutor() as executor:
-                logger.info("Bắt đầu encode text với model...")
                 embedding = await asyncio.get_event_loop().run_in_executor(
                     executor, self._model.encode, text
                 )
-                logger.info("Encode text thành công")
             
             # Chuẩn hóa vector (L2 normalization)
             embedding = embedding / np.linalg.norm(embedding)
             
             # Cache kết quả
             embedding_list = embedding.tolist()
-            logger.info(f"Lưu embedding vào cache với key: {cache_key}")
             await redis_service.set_cache(cache_key, embedding_list, expiry=86400)  # Cache 24h
             
             return embedding_list
