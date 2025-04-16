@@ -1,86 +1,76 @@
 import json
-import logging
-from typing import Generator, Optional
-
-import requests
-from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from typing import Dict, Any
+from fastapi import Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
-
-from app.core.config import settings
 from app.db.session import SessionLocal
-from app.models.user import User
 
-# Cấu hình logging
-logger = logging.getLogger(__name__)
-
-# OAuth2 scheme
-reusable_oauth2 = OAuth2PasswordBearer(
-    tokenUrl=f"{settings.AUTH_SERVICE_URL}/auth/login"
-)
-
-def get_db() -> Generator:
-    """
-    Dependency để lấy database session
-    """
-    db = SessionLocal()
+# Dependency để lấy DB session
+def get_db() -> Session:
     try:
+        db = SessionLocal()
         yield db
     finally:
         db.close()
 
-def get_current_user(
-    db: Session = Depends(get_db), token: str = Depends(reusable_oauth2)
-) -> User:
+async def get_current_user(
+    request: Request
+) -> Dict[str, Any]:
     """
-    Dependency để lấy thông tin người dùng hiện tại từ token
+    Lấy thông tin user từ request header được set bởi API Gateway
+    sau khi verify token với auth service.
     """
-    try:
-        # Gọi đến auth service để validate token
-        auth_url = f"{settings.AUTH_SERVICE_URL}/auth/verify"
-        logger.info(f"Calling auth service at: {auth_url}")
-        
-        response = requests.get(
-            auth_url,
-            headers={"Authorization": f"Bearer {token}"},
-            timeout=10,
-        )
-        
-        if response.status_code != 200:
-            logger.error(f"Auth service response: {response.status_code} - {response.text}")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Token không hợp lệ",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-            
-        user_data = response.json()
-        logger.info(f"Auth service returned user data: {user_data}")
-        
-        # Kiểm tra user trong database local
-        user = db.query(User).filter(User.id == user_data["id"]).first()
-        
-        # Nếu user chưa có trong database, tạo mới
-        if not user:
-            user = User(
-                id=user_data["id"],
-                username=user_data.get("username", "unknown"),
-                email=user_data.get("email", "unknown@example.com"),
-                full_name=user_data.get("full_name", ""),
-                skills=json.dumps(user_data.get("skills", [])),
-                experience=json.dumps(user_data.get("experience", [])),
-                education=json.dumps(user_data.get("education", [])),
-            )
-            db.add(user)
-            db.commit()
-            db.refresh(user)
-        
-        return user
-        
-    except Exception as e:
-        logger.error(f"Lỗi khi xác thực người dùng: {str(e)}")
+    user_info = request.headers.get("X-User-Info")
+    if not user_info:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Không thể xác thực người dùng",
-            headers={"WWW-Authenticate": "Bearer"},
-        ) 
+            detail="Không có thông tin xác thực"
+        )
+    
+    try:
+        # Parse và xử lý user info
+        user_info = json.loads(user_info)
+        
+        # Map thông tin user về đúng format
+        processed_info = {
+            "id": user_info.get("id"),  # id từ verify endpoint
+            "permissions": user_info.get("roles", []),  # roles -> permissions
+            "exp": user_info.get("exp"),
+            "type": user_info.get("type")
+        }
+        
+        return processed_info
+    except json.JSONDecodeError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid user info format"
+        )
+
+def check_permissions(required_permissions: list[str]):
+    """
+    Kiểm tra permissions từ user info trong header.
+    """
+    async def permission_checker(
+        current_user: Dict[str, Any] = Depends(get_current_user)
+    ) -> Dict[str, Any]:
+        user_permissions = current_user.get("permissions", [])
+        for permission in required_permissions:
+            if permission not in user_permissions:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Không có quyền: {permission}"
+                )
+        return current_user
+    return permission_checker
+
+async def get_current_superuser(
+    current_user: Dict[str, Any] = Depends(get_current_user)
+) -> Dict[str, Any]:
+    """
+    Kiểm tra nếu user có quyền admin từ user info.
+    """
+    if "admin" not in current_user.get("permissions", []):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Yêu cầu quyền admin"
+        )
+    return current_user

@@ -68,14 +68,14 @@ class Settings(BaseSettings):
             "/health"
         ]),
         "interview": (INTERVIEW_SERVICE_URL, [
-            "/api/v1/interviews",
-            "/api/v1/interviews/{interview_id}",
-            "/api/v1/interviews/{interview_id}/questions",
-            "/api/v1/interviews/{interview_id}/questions/{question_id}",
-            "/api/v1/interviews/{interview_id}/questions/{question_id}/answer",
-            "/api/v1/practice-sessions",
-            "/api/v1/practice-sessions/{session_id}",
-            "/api/v1/practice-sessions/{session_id}/answer",
+            "/interviews",
+            "/interviews/{interview_id}",
+            "/interviews/{interview_id}/questions",
+            "/interviews/{interview_id}/questions/{question_id}",
+            "/interviews/{interview_id}/questions/{question_id}/answer",
+            "/practice-sessions",
+            "/practice-sessions/{session_id}",
+            "/practice-sessions/{session_id}/answer",
             "/health"
         ]),
     }

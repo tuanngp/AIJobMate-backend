@@ -1,13 +1,12 @@
 import json
 import logging
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Dict
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_db
-from app.models.user import User
 from app.models.interview import Interview
 from app.models.interview_question import InterviewQuestion
 from app.schemas.interview import (
@@ -17,7 +16,10 @@ from app.schemas.interview import (
     InterviewQuestion as InterviewQuestionSchema,
     GenerateQuestionsRequest,
     GenerateQuestionsResponse,
+    AnalysisResponse,
+    AnswerFeedback
 )
+from app.schemas.response import BaseResponseModel
 from app.services.openai_service import generate_interview_questions, analyze_interview_answer
 from app.services.redis_service import RedisService
 
@@ -26,12 +28,12 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-@router.post("/generate", response_model=GenerateQuestionsResponse)
+@router.post("/generate", response_model=BaseResponseModel[GenerateQuestionsResponse])
 async def generate_questions(
     *,
     db: Session = Depends(get_db),
     request: GenerateQuestionsRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Any:
     """
     Tạo câu hỏi phỏng vấn dựa trên các tiêu chí đầu vào sử dụng AI.
@@ -40,7 +42,7 @@ async def generate_questions(
         # Tạo một interview mới
         title = f"Phỏng vấn cho vị trí {request.job_title}"
         new_interview = Interview(
-            user_id=current_user.id,
+            user_id=current_user["id"],
             title=title,
             job_title=request.job_title,
             job_description=request.job_description,
@@ -126,44 +128,63 @@ async def generate_questions(
         for q in question_objects:
             db.refresh(q)
         
-        # Tạo response
-        return {
+        # Tạo response data
+        response_data = {
             "interview_id": new_interview.id,
             "title": new_interview.title,
             "job_title": new_interview.job_title,
             "questions": question_objects
         }
+        
+        # Trả về response theo định dạng mới
+        return BaseResponseModel(
+            code=status.HTTP_200_OK,
+            message="Tạo câu hỏi phỏng vấn thành công",
+            data=response_data
+        )
     
     except Exception as e:
         # Rollback trong trường hợp lỗi
         db.rollback()
         logger.error(f"Lỗi khi tạo câu hỏi phỏng vấn: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Lỗi khi tạo câu hỏi phỏng vấn: {str(e)}")
+        return BaseResponseModel(
+            code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Lỗi khi tạo câu hỏi phỏng vấn",
+            errors={"detail": str(e)}
+        )
 
-@router.get("/{interview_id}", response_model=InterviewSchema)
+@router.get("/{interview_id}", response_model=BaseResponseModel[InterviewSchema])
 def get_interview(
     interview_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Any:
     """
     Lấy thông tin chi tiết của một phỏng vấn.
     """
     interview = (
         db.query(Interview)
-        .filter(Interview.id == interview_id, Interview.user_id == current_user.id)
+        .filter(Interview.id == interview_id, Interview.user_id == current_user["id"])
         .first()
     )
     
     if not interview:
-        raise HTTPException(status_code=404, detail="Không tìm thấy phỏng vấn")
+        return BaseResponseModel(
+            code=status.HTTP_404_NOT_FOUND,
+            message="Không tìm thấy phỏng vấn",
+            errors={"interview": "Không tìm thấy phỏng vấn"}
+        )
     
-    return interview
+    return BaseResponseModel(
+        code=status.HTTP_200_OK,
+        message="Lấy thông tin phỏng vấn thành công",
+        data=interview
+    )
 
-@router.get("/", response_model=List[InterviewSchema])
+@router.get("/", response_model=BaseResponseModel[List[InterviewSchema]])
 def get_interviews(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: Dict[str, Any] = Depends(get_current_user),
     skip: int = 0,
     limit: int = 100,
 ) -> Any:
@@ -172,35 +193,51 @@ def get_interviews(
     """
     interviews = (
         db.query(Interview)
-        .filter(Interview.user_id == current_user.id)
+        .filter(Interview.user_id == current_user["id"])
         .order_by(Interview.created_at.desc())
         .offset(skip)
         .limit(limit)
         .all()
     )
     
-    return interviews
+    return BaseResponseModel(
+        code=status.HTTP_200_OK,
+        message="Lấy danh sách phỏng vấn thành công",
+        data=interviews
+    )
 
-@router.post("/{interview_id}/questions/{question_id}/analyze")
+@router.post("/{interview_id}/questions/{question_id}/analyze", response_model=BaseResponseModel[AnalysisResponse])
 async def analyze_answer(
     interview_id: int,
     question_id: int,
     user_answer: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Any:
     """
     Phân tích câu trả lời của người dùng đối với một câu hỏi phỏng vấn.
+    Trả về phản hồi chi tiết từ AI bao gồm:
+    - Điểm mạnh và điểm yếu của câu trả lời
+    - Đánh giá về cấu trúc và độ rõ ràng
+    - Đánh giá về độ liên quan đến câu hỏi
+    - Đánh giá về mức độ chuyên môn
+    - Gợi ý cải thiện
+    - Câu trả lời mẫu
+    - Điểm số theo từng hạng mục và điểm tổng thể
     """
     # Kiểm tra phỏng vấn
     interview = (
         db.query(Interview)
-        .filter(Interview.id == interview_id, Interview.user_id == current_user.id)
+        .filter(Interview.id == interview_id, Interview.user_id == current_user["id"])
         .first()
     )
     
     if not interview:
-        raise HTTPException(status_code=404, detail="Không tìm thấy phỏng vấn")
+        return BaseResponseModel(
+            code=status.HTTP_404_NOT_FOUND,
+            message="Không tìm thấy phỏng vấn",
+            errors={"interview": "Không tìm thấy phỏng vấn"}
+        )
     
     # Kiểm tra câu hỏi
     question = (
@@ -210,7 +247,11 @@ async def analyze_answer(
     )
     
     if not question:
-        raise HTTPException(status_code=404, detail="Không tìm thấy câu hỏi")
+        return BaseResponseModel(
+            code=status.HTTP_404_NOT_FOUND, 
+            message="Không tìm thấy câu hỏi",
+            errors={"question": "Không tìm thấy câu hỏi"}
+        )
     
     try:
         # Lưu câu trả lời của người dùng
@@ -221,7 +262,9 @@ async def analyze_answer(
             question=question.question,
             question_type=question.question_type,
             user_answer=user_answer,
-            job_title=interview.job_title
+            job_title=interview.job_title,
+            job_description=interview.job_description,
+            industry=interview.industry
         )
         
         # Lưu phản hồi AI
@@ -231,34 +274,53 @@ async def analyze_answer(
         db.commit()
         db.refresh(question)
         
-        return {
+        response_data = {
             "question_id": question.id,
-            "feedback": feedback
+            "feedback": feedback,
+            "question": question.question,
+            "question_type": question.question_type
         }
+        
+        return BaseResponseModel(
+            code=status.HTTP_200_OK,
+            message="Phân tích câu trả lời thành công",
+            data=response_data
+        )
         
     except Exception as e:
         logger.error(f"Lỗi khi phân tích câu trả lời: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Lỗi khi phân tích câu trả lời: {str(e)}")
+        return BaseResponseModel(
+            code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Lỗi khi phân tích câu trả lời",
+            errors={"detail": str(e)}
+        )
 
-@router.delete("/{interview_id}")
+@router.delete("/{interview_id}", response_model=BaseResponseModel)
 def delete_interview(
     interview_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Any:
     """
     Xóa một phỏng vấn.
     """
     interview = (
         db.query(Interview)
-        .filter(Interview.id == interview_id, Interview.user_id == current_user.id)
+        .filter(Interview.id == interview_id, Interview.user_id == current_user["id"])
         .first()
     )
     
     if not interview:
-        raise HTTPException(status_code=404, detail="Không tìm thấy phỏng vấn")
+        return BaseResponseModel(
+            code=status.HTTP_404_NOT_FOUND,
+            message="Không tìm thấy phỏng vấn",
+            errors={"interview": "Không tìm thấy phỏng vấn"}
+        )
     
     db.delete(interview)
     db.commit()
     
-    return {"message": "Đã xóa phỏng vấn thành công"} 
+    return BaseResponseModel(
+        code=status.HTTP_200_OK,
+        message="Đã xóa phỏng vấn thành công"
+    ) 
