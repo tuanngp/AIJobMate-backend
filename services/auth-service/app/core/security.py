@@ -3,7 +3,7 @@ from typing import Any, Union
 from jose import jwt
 from passlib.context import CryptContext
 from app.core.config import settings
-from app.models.token import TokenPayload
+from app.schemas.token import TokenPayload
 import uuid
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -63,7 +63,6 @@ def verify_token(token: str, token_type: str) -> TokenPayload:
         token_data = TokenPayload(**payload)
         
         if token_data.exp < current_time:
-            time_diff = current_time - token_data.exp
             raise jwt.JWTError("Token has expired")
             
         return token_data
