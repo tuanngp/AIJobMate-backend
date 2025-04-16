@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     # Service URLs
     AUTH_SERVICE_URL: str = os.getenv("AUTH_SERVICE_URL", "http://localhost:8001")
     CAREER_ADVISOR_SERVICE_URL: str = os.getenv("CAREER_ADVISOR_SERVICE_URL", "http://localhost:8002")
+    INTERVIEW_SERVICE_URL: str = os.getenv("INTERVIEW_SERVICE_URL", "http://localhost:8003")
     FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
     # CORS
@@ -69,6 +70,21 @@ class Settings(BaseSettings):
         "/api/v1/career-advisor/recommendations",
         # Health check
         "health"
+    ]
+
+    INTERVIEW_PATHS: List[str] = [
+        # Base paths
+        "/api/v1/interviews",
+        "/api/v1/interviews/{interview_id}",
+        "/api/v1/interviews/{interview_id}/questions",
+        "/api/v1/interviews/{interview_id}/questions/{question_id}",
+        "/api/v1/interviews/{interview_id}/questions/{question_id}/answer",
+        # Practice session paths
+        "/api/v1/practice-sessions",
+        "/api/v1/practice-sessions/{session_id}",
+        "/api/v1/practice-sessions/{session_id}/answer",
+        # Health check
+        "/health"
     ]
 
     # Monitoring

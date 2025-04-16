@@ -15,6 +15,10 @@ class GatewayHandler:
             # Career Advisor routes
             path: settings.CAREER_ADVISOR_SERVICE_URL
             for path in settings.CAREER_ADVISOR_PATHS
+        } | {
+            # Interview service routes
+            path: settings.INTERVIEW_SERVICE_URL
+            for path in settings.INTERVIEW_PATHS
         }
 
     async def verify_token(self, token: str) -> Dict[str, Any]:
