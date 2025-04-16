@@ -1,9 +1,9 @@
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 from app.api.routes import router as api_router
 from app.core.config import settings
-from app.db.session import engine, SessionLocal
+from app.db.session import engine
 from app.db.base import Base
 from prometheus_client import make_asgi_app
 from contextlib import asynccontextmanager
@@ -16,8 +16,6 @@ Base.metadata.create_all(bind=engine)
 async def lifespan(app: FastAPI):
     # Khởi tạo các kết nối, cơ sở dữ liệu, cache, v.v.
     print("Starting up the application...")
-    
-    # Khởi tạo Pinecone vector database (sẽ thực hiện trong services)
     
     yield
     

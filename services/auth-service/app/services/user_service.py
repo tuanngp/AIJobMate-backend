@@ -2,7 +2,8 @@ from typing import List, Optional
 from datetime import datetime
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
-from app.models.user import User, Role, UserCreate, UserUpdate
+from app.models.user import User, Role
+from app.schemas.user import UserCreate, UserUpdate
 from app.core.security import get_password_hash, verify_password
 
 class UserService:
