@@ -1,7 +1,7 @@
 import json
 import logging
 import asyncio
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 from functools import wraps
 
 from openai import OpenAI
@@ -9,7 +9,6 @@ from tenacity import retry, stop_after_attempt, wait_random_exponential
 
 from app.core.config import settings
 from app.services.embedding_service import EmbeddingService
-from app.services.redis_service import RedisService
 from app.services.redis_service import RedisService
 
 # Cấu hình logging
@@ -40,8 +39,7 @@ def with_timeout(timeout_seconds: int = 30):
             try:
                 return await asyncio.wait_for(func(*args, **kwargs), timeout=timeout_seconds)
             except asyncio.TimeoutError:
-                raise Exception(
-                    f"Operation timed out after {timeout_seconds} seconds")
+                logger.error(f"Function {func.__name__} timed out after {timeout_seconds}s")
         return wrapper
     return decorator
 
@@ -64,6 +62,7 @@ async def create_embedding(text: str) -> List[float]:
         cached_embedding = await redis_service.get_cache(cache_key)
 
         if cached_embedding:
+            logger.info(f"Sử dụng embedding từ cache cho: {text[:50]}...")
             return cached_embedding
 
         try:
@@ -71,13 +70,7 @@ async def create_embedding(text: str) -> List[float]:
             embedding_service = await EmbeddingService.get_instance()
             embedding = await embedding_service.create_embedding(text)
 
-            if not isinstance(embedding, list):
-                raise ValueError("Embedding phải là một list")
-
-            # Lưu vào cache
-            # Cache 24h
             await redis_service.set_cache(cache_key, embedding, expiry=86400)
-
             return embedding
 
         except Exception as e:
@@ -174,6 +167,7 @@ async def analyze_career_profile(
         cached_result = await redis_service.get_cache(cache_key)
 
         if cached_result:
+            logger.info(f"Sử dụng kết quả phân tích từ cache: {cache_key}")
             return cached_result
 
         logger.info(

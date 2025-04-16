@@ -20,11 +20,6 @@ class CVInDB(CVBase):
 
     class Config:
         from_attributes = True
-
-
-class CVAnalysisResponse(BaseModel):
-    status: str
-    message: str
     
     
 class PersonalInfo(BaseModel):

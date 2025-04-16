@@ -20,7 +20,7 @@ class GatewayHandler:
         try:
             headers = {"Authorization": f"Bearer {token}"}
             response = await self.client.get(
-                f"{settings.AUTH_SERVICE_URL}/auth/verify",
+                f"{settings.AUTH_SERVICE_URL}{settings.API_PREFIX}/auth/verify",
                 headers=headers
             )
 
@@ -138,8 +138,16 @@ class GatewayHandler:
             
             try:
                 token = auth_header.split(" ")[1]
-                user_info = await self.verify_token(token)
+                response_data = await self.verify_token(token)
+                user_info = response_data.get("data")
                 
+                if not user_info:
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail=response_data.get("errors", ""),
+                        headers={"WWW-Authenticate": "Bearer"},
+                    )
+                    
                 # Thêm user info vào header để forward
                 headers["X-User-ID"] = str(user_info["id"])
                 headers["X-User-Roles"] = ",".join(user_info["roles"])

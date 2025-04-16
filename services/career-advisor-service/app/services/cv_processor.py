@@ -9,8 +9,6 @@ from typing import Tuple, Dict, Any, List, Optional
 from fastapi import UploadFile
 import tempfile
 from tenacity import retry, stop_after_attempt, wait_exponential
-from datetime import datetime
-from functools import partial
 
 from app.services.openai_service import (
     analyze_cv_content,
@@ -21,12 +19,21 @@ from app.services.openai_service import (
 from app.services.embedding_service import EmbeddingService
 from app.services.pinecone_service import search_career_pathways, store_career_pathway
 
+# Cấu hình logger
 logger = logging.getLogger(__name__)
 
 class CVProcessor:
     """Service để xử lý và phân tích CV"""
     
     ALLOWED_EXTENSIONS = {'.pdf', '.docx', '.txt'}
+    # Thêm các giá trị mặc định cho phân tích
+    DEFAULT_ANALYSIS = {
+        "skills": {"technical": [], "soft": []},
+        "experience": [],
+        "education": [],
+        "career_goals": [],
+        "analyst": {"experience_level": "Entry"}
+    }
     
     @staticmethod
     async def process_cv(file: UploadFile) -> Tuple[str, str, str]:
@@ -53,13 +60,10 @@ class CVProcessor:
         # Xử lý PDF và DOCX với temporary file
         temp_path = None
         try:
-            # Tạo và ghi temporary file
             with tempfile.NamedTemporaryFile(suffix=file_extension, delete=False) as temp_file:
                 temp_file.write(content)
-                temp_file.flush()
                 temp_path = temp_file.name
             
-            # Xử lý file theo định dạng
             if file_extension == '.pdf':
                 with open(temp_path, 'rb') as pdf_file:
                     extracted_text = CVProcessor._extract_from_pdf(pdf_file)
@@ -81,21 +85,20 @@ class CVProcessor:
     
     @staticmethod
     def _extract_from_pdf(file) -> str:
-        """Trích xuất text từ file PDF"""
-        text = ""
+        """Trích xuất text từ file PDF với xử lý từng trang để giảm sử dụng memory"""
+        text_parts = []
         pdf_reader = PyPDF2.PdfReader(file)
+        
         for page in pdf_reader.pages:
-            text += page.extract_text() + "\n"
-        return text.strip()
+            text_parts.append(page.extract_text())
+            
+        return "\n".join(text_parts).strip()
     
     @staticmethod
     def _extract_from_docx(file_path: str) -> str:
         """Trích xuất text từ file DOCX"""
         doc = docx.Document(file_path)
-        text = ""
-        for paragraph in doc.paragraphs:
-            text += paragraph.text + "\n"
-        return text.strip()
+        return "\n".join(paragraph.text for paragraph in doc.paragraphs).strip()
 
     @staticmethod
     @retry(
@@ -108,36 +111,28 @@ class CVProcessor:
         text: str,
         basic_analysis: Dict[str, Any]
     ) -> Optional[List[float]]:
-        """
-        Tạo embedding vector cho CV với cơ chế retry và timeout.
-        
-        Args:
-            cv_id: ID của CV
-            text: Nội dung CV
-            basic_analysis: Kết quả phân tích cơ bản
-            
-        Returns:
-            Optional[List[float]]: Vector embedding hoặc None nếu thất bại
-        """
+        """Tạo embedding vector cho CV với cơ chế retry và timeout."""
         try:
-            # Lấy instance của EmbeddingService
             embedding_service = await wait_for(
                 EmbeddingService.get_instance(),
                 timeout=10.0
             )
             
-            # Chuẩn bị dữ liệu
-            cv_text = f"{text}\n{json.dumps(basic_analysis)}"
+            # Chuẩn bị dữ liệu - sử dụng nội dung quan trọng để tạo embedding hiệu quả
+            important_fields = {
+                "skills": basic_analysis.get("skills", {}),
+                "experience": basic_analysis.get("experience", []),
+                "education": basic_analysis.get("education", []),
+                "career_goals": basic_analysis.get("career_goals", []),
+            }
+            
+            cv_text = f"{text}\n{json.dumps(important_fields)}"
             
             # Tạo embedding vector với timeout
             embedding_vector = await wait_for(
                 embedding_service.create_embedding(cv_text),
                 timeout=20.0
             )
-            
-            # Kiểm tra kết quả là coroutine
-            if asyncio.iscoroutine(embedding_vector):
-                embedding_vector = await wait_for(embedding_vector, timeout=10.0)
                 
             if not isinstance(embedding_vector, (list, tuple)) or not embedding_vector:
                 raise ValueError("Embedding vector không hợp lệ")
@@ -152,36 +147,104 @@ class CVProcessor:
             raise  # Raise để trigger retry
 
     @staticmethod
-    async def analyze_cv(cv_id: int, text: str) -> Dict[str, Any]:
-        """
-        Phân tích đầy đủ CV bao gồm thông tin nghề nghiệp và đề xuất
-        """
+    async def _extract_skills(basic_analysis: Dict[str, Any]) -> List[str]:
+        """Trích xuất danh sách kỹ năng từ basic analysis"""
+        all_skills = []
+        skills_data = basic_analysis.get("skills", {})
+        if isinstance(skills_data, dict):
+            all_skills.extend(skills_data.get("technical", []))
+            all_skills.extend(skills_data.get("soft", []))
+        return all_skills
+
+    @staticmethod
+    async def _process_career_matches(
+        cv_id: int, 
+        embedding_vector: Optional[List[float]], 
+        all_skills: List[str],
+        career_analysis: Dict[str, Any],
+        basic_analysis: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
+        """Xử lý và lấy career matches từ nhiều nguồn"""
+        career_matches = []
         try:
-            # 1. Phân tích cơ bản CV và validate kết quả
-            basic_analysis = await analyze_cv_content(text)
-            if hasattr(basic_analysis, '__await__'):
-                basic_analysis = await basic_analysis
+            # Lưu career recommendations vào Pinecone
+            basic_analysis_data = basic_analysis.get("analysis", {})
+            career_recommendations = basic_analysis_data.get("career_recommendations", [])
+            
+            if career_recommendations:
+                store_tasks = [
+                    store_career_pathway(
+                        pathway_id=f"career_{rec['position'].lower().replace(' ', '_')}",
+                        name=rec['position'],
+                        description=rec.get('description', ''),
+                        required_skills=rec.get('required_skills', []),
+                        reason=rec.get('reason', ''),
+                        industry=rec.get('industry', ''),
+                        required_experience=rec.get('required_experience', ''),
+                        score=rec.get('score', 0.0),
+                    )
+                    for rec in career_recommendations
+                ]
                 
+                try:
+                    await wait_for(asyncio.gather(*store_tasks), timeout=20.0)
+                except TimeoutError:
+                    logger.warning(f"CV {cv_id}: Timeout khi lưu career pathways")
+                except Exception as e:
+                    logger.error(f"CV {cv_id}: Lỗi khi lưu career pathways: {str(e)}")
+
+            # Tìm kiếm career matches từ embedding nếu có
+            if embedding_vector:
+                try:
+                    career_matches = await wait_for(
+                        search_career_pathways(
+                            embedding_vector=embedding_vector,
+                            skills=all_skills,
+                            top_k=5
+                        ),
+                        timeout=10.0
+                    )
+                except Exception as e:
+                    logger.error(f"CV {cv_id}: Lỗi khi tìm career matches từ embedding: {str(e)}")
+
+            # Fallback: sử dụng career paths từ career analysis nếu không có matches từ embedding
+            if not career_matches:
+                career_paths = career_analysis.get("career_paths", [])[:5]
+                career_matches = [
+                    {"name": path, "score": fit_score}
+                    for path, fit_score in career_paths
+                ]
+
+        except Exception as e:
+            logger.error(f"CV {cv_id}: Lỗi trong quá trình xử lý career matches: {str(e)}")
+            
+        # Luôn đảm bảo trả về list, dù là rỗng
+        return career_matches or []
+
+    @staticmethod
+    async def analyze_cv(cv_id: int, text: str) -> Dict[str, Any]:
+        """Phân tích đầy đủ CV bao gồm thông tin nghề nghiệp và đề xuất"""
+        try:
+            # 1. Phân tích cơ bản CV
+            basic_analysis = await analyze_cv_content(text)
+            
             if not basic_analysis or not isinstance(basic_analysis, dict):
                 raise ValueError("Không thể phân tích CV: Kết quả phân tích không hợp lệ")
 
-            # Extract technical và soft skills
-            all_skills = []
-            skills_data = basic_analysis.get("skills", {})
-            if isinstance(skills_data, dict):
-                all_skills.extend(skills_data.get("technical", []))
-                all_skills.extend(skills_data.get("soft", []))
+            # 2. Trích xuất skills
+            all_skills = await CVProcessor._extract_skills(basic_analysis)
 
-            # 2. Tạo career profile dựa trên basic analysis
+            # 3. Tạo career profile
             career_analysis = await analyze_career_profile(
                 skills=all_skills,
                 experiences=basic_analysis.get("experience", []),
                 education=basic_analysis.get("education", []),
-                career_goals=basic_analysis.get("career_goals", []),  # Không phụ thuộc vào career_recommendations
-                preferred_industries=[]  # Sẽ được xác định sau
+                career_goals=basic_analysis.get("career_goals", []),
+                preferred_industries=[]
             )
             
-            # 3. Tạo embedding cho CV với retry mechanism
+            # 4. Tạo embedding cho CV
+            embedding_vector = None
             try:
                 embedding_vector = await wait_for(
                     CVProcessor._create_cv_embedding_with_retry(
@@ -189,105 +252,48 @@ class CVProcessor:
                         text=text,
                         basic_analysis=basic_analysis
                     ),
-                    timeout=30.0  # 30 giây timeout cho việc tạo embedding
+                    timeout=30.0
                 )
-            except TimeoutError:
-                logger.error(f"CV {cv_id}: Timeout khi tạo embedding vector")
-                embedding_vector = None
             except Exception as e:
                 logger.error(f"CV {cv_id}: Lỗi khi tạo embedding vector: {str(e)}")
-                embedding_vector = None
 
-            # 4. Xử lý career matches
-            career_matches = []
-
-            try:
-                # 4.1 Lưu career recommendations vào Pinecone
-                basic_analysis_data = basic_analysis.get("analysis", {})
-                career_recommendations = basic_analysis_data.get("career_recommendations", [])
-                
-                if career_recommendations:
-                    # Tạo tasks để lưu career pathways
-                    store_tasks = [
-                        store_career_pathway(
-                            pathway_id=f"career_{rec['position'].lower().replace(' ', '_')}",
-                            name=rec['position'],
-                            description=rec.get('description', ''),
-                            required_skills=rec.get('required_skills', []),
-                            reason=rec.get('reason', ''),
-                            industry=rec.get('industry', ''),
-                            required_experience=rec.get('required_experience', ''),
-                            score=rec.get('score', 0.0),
-                        )
-                        for rec in career_recommendations
-                    ]
-                    
-                    # Chờ tất cả tasks hoàn thành với timeout
-                    try:
-                        await wait_for(asyncio.gather(*store_tasks), timeout=20.0)
-                    except TimeoutError:
-                        logger.warning(f"CV {cv_id}: Timeout khi lưu career pathways")
-                    except Exception as e:
-                        logger.error(f"CV {cv_id}: Lỗi khi lưu career pathways: {str(e)}")
-
-                # 4.2 Tìm kiếm career matches
-                if embedding_vector:
-                    try:
-                        # Tìm kiếm dựa trên embedding vector với timeout
-                        career_matches = await wait_for(
-                            search_career_pathways(
-                                embedding_vector=embedding_vector,
-                                skills=all_skills,
-                                top_k=5
-                            ),
-                            timeout=10.0
-                        )
-                    except (TimeoutError, Exception) as e:
-                        logger.error(f"CV {cv_id}: Lỗi khi tìm career matches từ embedding: {str(e)}")
-                        career_matches = []
-
-                # Nếu không có matches từ embedding, sử dụng fallback
-                if not career_matches:
-                    career_paths = career_analysis.get("career_paths", [])[:5]
-                    career_matches = [
-                        {"name": path, "score": fit_score}
-                        for path, fit_score in career_paths
-                    ]
-
-            except Exception as e:
-                logger.error(f"CV {cv_id}: Lỗi trong quá trình xử lý career matches: {str(e)}")
-                # Đảm bảo luôn có career_matches, dù là rỗng
-                career_matches = []
+            # 5. Xử lý career matches
+            career_matches = await CVProcessor._process_career_matches(
+                cv_id=cv_id,
+                embedding_vector=embedding_vector,
+                all_skills=all_skills,
+                career_analysis=career_analysis,
+                basic_analysis=basic_analysis
+            )
             
-            # 5. Phân tích skill gaps cho các career matches
+            # 6. Phân tích skill gaps
+            all_skill_gaps = []
             try:
+                experience_level = basic_analysis.get("analyst", {}).get("experience_level", "N/A")
                 all_skill_gaps = await identify_skill_gaps(
                     current_skills=all_skills,
                     target_career=career_matches,
-                    experience_level=basic_analysis.get("analyst").get("experience_level", "N/A"),
+                    experience_level=experience_level,
                 )
             except Exception as e:
                 logger.error(f"CV {cv_id}: Lỗi khi phân tích skill gaps: {str(e)}")
-                all_skill_gaps = []
             
-            # Tổng hợp kết quả với validation
-            # Đánh giá chất lượng CV
+            # 7. Đánh giá chất lượng CV
+            quality_assessment = {}
             try:
                 quality_assessment = await assess_cv_quality(text)
             except Exception as e:
                 logger.error(f"CV {cv_id}: Lỗi khi đánh giá chất lượng CV: {str(e)}")
-                quality_assessment = None
 
-            # Tổng hợp kết quả với validation
-            analysis_result = {
-                "basic_analysis": basic_analysis or {},
-                "career_analysis": career_analysis or {},
-                "career_matches": career_matches or [],
+            # 8. Tổng hợp kết quả
+            return {
+                "basic_analysis": basic_analysis,
+                "career_analysis": career_analysis,
+                "career_matches": career_matches,
                 "skill_gaps": all_skill_gaps,
-                "quality_assessment": quality_assessment or {},
+                "quality_assessment": quality_assessment,
                 "embedding_vector": embedding_vector,
             }
-            return analysis_result
 
         except Exception as e:
             error_msg = str(e)

@@ -1,10 +1,9 @@
 import json
 import logging
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional
 
 from pinecone import Pinecone, ServerlessSpec
 from tenacity import retry, stop_after_attempt, wait_random_exponential
-import asyncio
 from app.core.config import settings
 from app.services.redis_service import RedisService
 from app.services.openai_service import create_embedding

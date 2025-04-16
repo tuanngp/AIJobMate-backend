@@ -1,7 +1,8 @@
-from concurrent.futures import ThreadPoolExecutor
 import logging
 import asyncio
-from typing import List
+from functools import lru_cache
+from concurrent.futures import ThreadPoolExecutor
+from typing import List, Optional, Dict, Any, Union, Tuple
 import numpy as np
 from sentence_transformers import SentenceTransformer
 from app.services.redis_service import RedisService
@@ -10,36 +11,97 @@ from app.services.redis_service import RedisService
 logger = logging.getLogger(__name__)
 
 class EmbeddingService:
-    _instance = None
-    _model = None
+    """
+    Service để tạo và quản lý embedding vectors cho văn bản.
+    Sử dụng mô hình SentenceTransformer để tạo embeddings.
+    """
+    _instance: Optional['EmbeddingService'] = None
+    _model: Optional[SentenceTransformer] = None
+    _initialized: bool = False
+    _executor: Optional[ThreadPoolExecutor] = None
+    
+    # Cấu hình cache
+    CACHE_EXPIRY = 86400  # 24 giờ
+    CACHE_PREFIX = "embedding"
+    MAX_CACHE_KEY_LENGTH = 50
 
     @classmethod
     async def get_instance(cls) -> 'EmbeddingService':
         """
-        Get singleton instance với async initialization
+        Lấy singleton instance với async initialization
+        
+        Returns:
+            EmbeddingService: Instance đã được khởi tạo
         """
         if cls._instance is None:
             cls._instance = cls()
             await cls._instance.initialize()
+        elif not cls._instance._initialized:
+            await cls._instance.initialize()
         return cls._instance
 
-    async def initialize(self):
+    async def initialize(self) -> None:
         """
-        Async initialization
+        Khởi tạo async cho model và các resource cần thiết
         """
-        if self._model is None:
-            try:
-                self._model = SentenceTransformer('VoVanPhuc/sup-SimCSE-VietNamese-phobert-base')
-            except Exception as e:
-                logger.error(f"Lỗi khi khởi tạo embedding model: {str(e)}")
-                raise
+        if self._initialized:
+            return
+            
+        try:
+            if self._model is None:
+                # Khởi tạo model trong ThreadPoolExecutor để không block event loop
+                with ThreadPoolExecutor() as executor:
+                    self._model = await asyncio.get_event_loop().run_in_executor(
+                        executor,
+                        lambda: SentenceTransformer('VoVanPhuc/sup-SimCSE-VietNamese-phobert-base')
+                    )
+                
+            # Khởi tạo executor cho các tác vụ CPU-bound
+            self._executor = ThreadPoolExecutor(max_workers=4)
+            self._initialized = True
+            
+        except Exception as e:
+            logger.error(f"Lỗi khi khởi tạo embedding model: {str(e)}", exc_info=True)
+            raise
 
     def __init__(self):
         """
         Khởi tạo instance với model là None, sẽ được initialize sau
         """
         if self._instance is not None:
-            raise Exception("EmbeddingService là singleton, sử dụng get_instance()")
+            raise RuntimeError("EmbeddingService là singleton, sử dụng get_instance()")
+        
+        # Các thuộc tính sẽ được khởi tạo trong initialize()
+        self._initialized = False
+        self._redis_service = None
+
+    def __del__(self):
+        """
+        Dọn dẹp tài nguyên khi instance bị hủy
+        """
+        if self._executor is not None:
+            self._executor.shutdown(wait=False)
+
+    @property
+    def redis_service(self):
+        """Lazy loading của Redis service"""
+        if self._redis_service is None:
+            self._redis_service = RedisService.get_instance()
+        return self._redis_service
+
+    def _generate_cache_key(self, prefix: str, text: str) -> str:
+        """
+        Tạo cache key từ prefix và text
+        
+        Args:
+            prefix: Tiền tố cho cache key
+            text: Văn bản để tạo key
+            
+        Returns:
+            str: Cache key
+        """
+        truncated_text = text[:self.MAX_CACHE_KEY_LENGTH]
+        return self.redis_service.generate_cache_key(f"{self.CACHE_PREFIX}_{prefix}", truncated_text)
 
     async def create_embedding(self, text: str) -> List[float]:
         """
@@ -50,90 +112,149 @@ class EmbeddingService:
             
         Returns:
             List[float]: Vector embedding (kích thước 384)
-        """
-        try:
             
+        Raises:
+            ValueError: Nếu text rỗng hoặc không hợp lệ
+            RuntimeError: Nếu có lỗi khi tạo embedding
+        """
+        if not text or not isinstance(text, str):
+            raise ValueError("Text không được rỗng và phải là chuỗi")
+            
+        try:
             # Kiểm tra cache
-            redis_service = RedisService.get_instance()
-            cache_key = redis_service.generate_cache_key("embedding", text[:50])
-            cached_embedding = await redis_service.get_cache(cache_key)
+            cache_key = self._generate_cache_key("text", text[:self.MAX_CACHE_KEY_LENGTH])
+            cached_embedding = await self.redis_service.get_cache(cache_key)
             
             if cached_embedding is not None:
                 return cached_embedding
 
-            # Tạo embedding (chạy trong ThreadPoolExecutor để không block event loop)
-            from concurrent.futures import ThreadPoolExecutor
-            with ThreadPoolExecutor() as executor:
-                embedding = await asyncio.get_event_loop().run_in_executor(
-                    executor, self._model.encode, text
-                )
-            
-            # Chuẩn hóa vector (L2 normalization)
-            embedding = embedding / np.linalg.norm(embedding)
+            # Tạo embedding trong executor để không block event loop
+            embedding = await asyncio.get_event_loop().run_in_executor(
+                self._executor, 
+                self._create_embedding_sync, 
+                text
+            )
             
             # Cache kết quả
-            embedding_list = embedding.tolist()
-            await redis_service.set_cache(cache_key, embedding_list, expiry=86400)  # Cache 24h
+            await self.redis_service.set_cache(
+                cache_key, 
+                embedding, 
+                expiry=self.CACHE_EXPIRY
+            )
             
-            return embedding_list
+            return embedding
             
         except Exception as e:
             logger.error(f"Lỗi khi tạo embedding: {str(e)}", exc_info=True)
-            raise
+            raise RuntimeError(f"Lỗi khi tạo embedding: {str(e)}")
+
+    def _create_embedding_sync(self, text: str) -> List[float]:
+        """
+        Hàm đồng bộ để tạo embedding vector
+        
+        Args:
+            text: Văn bản cần tạo embedding
+            
+        Returns:
+            List[float]: Vector embedding đã chuẩn hóa
+        """
+        # Tạo embedding
+        embedding = self._model.encode(text)
+        
+        # Chuẩn hóa vector (L2 normalization)
+        norm = np.linalg.norm(embedding)
+        if norm > 0:
+            embedding = embedding / norm
+            
+        return embedding.tolist()
 
     async def create_embeddings(self, texts: List[str]) -> List[List[float]]:
         """
-        Tạo embedding vectors cho nhiều văn bản.
+        Tạo embedding vectors cho nhiều văn bản với hiệu suất tối ưu.
         
         Args:
             texts: Danh sách văn bản cần tạo embedding
             
         Returns:
             List[List[float]]: Danh sách các vector embedding
+            
+        Raises:
+            ValueError: Nếu danh sách text rỗng
+            RuntimeError: Nếu có lỗi khi tạo embeddings
         """
+        if not texts:
+            return []
+            
         try:
-            # Kiểm tra cache cho từng text
-            # Khởi tạo Redis service
-            redis_service = RedisService.get_instance()
-            results = []
-            texts_to_encode = []
-            indices_to_encode = []
+            # Chuẩn bị kết quả và tracking các text cần encode
+            results = [None] * len(texts)
+            uncached_texts = []
+            uncached_indices = []
             
             # Kiểm tra cache cho mỗi text
             for i, text in enumerate(texts):
-                cache_key = redis_service.generate_cache_key("embedding", text[:50])
-                cached_embedding = await redis_service.get_cache(cache_key)
+                if not text or not isinstance(text, str):
+                    results[i] = []  # Trả về vector rỗng cho text không hợp lệ
+                    continue
+                    
+                cache_key = self._generate_cache_key("text", text[:self.MAX_CACHE_KEY_LENGTH])
+                cached_embedding = await self.redis_service.get_cache(cache_key)
                 
                 if cached_embedding:
-                    results.append(cached_embedding)
+                    results[i] = cached_embedding
                 else:
-                    texts_to_encode.append(text)
-                    indices_to_encode.append(i)
-                    results.append(None)
+                    uncached_texts.append(text)
+                    uncached_indices.append(i)
             
-            # Nếu có texts chưa được cache
-            if texts_to_encode:
-                # Tạo embeddings cho batch trong ThreadPoolExecutor
-                with ThreadPoolExecutor() as executor:
-                    embeddings = await asyncio.get_event_loop().run_in_executor(
-                        executor, self._model.encode, texts_to_encode
+            # Tạo embeddings cho các text chưa được cache
+            if uncached_texts:
+                # Phương thức batch encode
+                batch_embeddings = await self._batch_encode_texts(uncached_texts)
+                
+                # Cập nhật kết quả và cache
+                cache_tasks = []
+                for idx, embedding in zip(uncached_indices, batch_embeddings):
+                    results[idx] = embedding
+                    
+                    # Tạo task cache nhưng không đợi hoàn thành ngay
+                    cache_key = self._generate_cache_key("text", texts[idx][:self.MAX_CACHE_KEY_LENGTH])
+                    cache_tasks.append(
+                        self.redis_service.set_cache(cache_key, embedding, expiry=self.CACHE_EXPIRY)
                     )
                 
-                # Chuẩn hóa vectors
-                embeddings = embeddings / np.linalg.norm(embeddings, axis=1, keepdims=True)
-                
-                # Cache và cập nhật kết quả
-                for idx, embedding in zip(indices_to_encode, embeddings):
-                    embedding_list = embedding.tolist()
-                    cache_key = redis_service.generate_cache_key("embedding", texts[idx][:50])
-                    await redis_service.set_cache(cache_key, embedding_list, expiry=86400)
-                    results[idx] = embedding_list
+                # Đợi tất cả cache tasks hoàn thành bất đồng bộ
+                if cache_tasks:
+                    await asyncio.gather(*cache_tasks)
             
             return results
             
         except Exception as e:
-            logger.error(f"Lỗi khi tạo embeddings: {str(e)}")
-            raise
+            logger.error(f"Lỗi khi tạo batch embeddings: {str(e)}", exc_info=True)
+            raise RuntimeError(f"Lỗi khi tạo batch embeddings: {str(e)}")
+
+    async def _batch_encode_texts(self, texts: List[str]) -> List[List[float]]:
+        """
+        Encode một batch các text thành embeddings
+        
+        Args:
+            texts: Danh sách các văn bản cần encode
+            
+        Returns:
+            List[List[float]]: Danh sách các embedding vectors
+        """
+        # Thực hiện batch encode trong executor
+        def batch_encode():
+            embeddings = self._model.encode(texts)
+            # Chuẩn hóa từng vector
+            norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
+            # Tránh chia cho 0
+            norms[norms == 0] = 1.0
+            normalized = embeddings / norms
+            return normalized.tolist()
+            
+        return await asyncio.get_event_loop().run_in_executor(
+            self._executor, batch_encode
+        )
 
     async def cross_lingual_similarity(self, vi_text: str, en_text: str) -> float:
         """
@@ -145,25 +266,19 @@ class EmbeddingService:
             
         Returns:
             float: Độ tương đồng ngữ nghĩa (0-1)
+            
+        Raises:
+            ValueError: Nếu text không hợp lệ
         """
+        if not vi_text or not en_text:
+            raise ValueError("Cả hai văn bản cần được cung cấp")
+            
         try:
-            # Tạo cache keys
-            redis_service = RedisService.get_instance()
-            vi_cache_key = redis_service.generate_cache_key("vi_embedding", vi_text[:50])
-            en_cache_key = redis_service.generate_cache_key("en_embedding", en_text[:50])
-            
-            # Kiểm tra cache cho embeddings
-            vi_embedding = await redis_service.get_cache(vi_cache_key)
-            en_embedding = await redis_service.get_cache(en_cache_key)
-            
-            # Tạo và cache embeddings nếu chưa có
-            if not vi_embedding:
-                vi_embedding = await self.create_embedding(vi_text)
-                await redis_service.set_cache(vi_cache_key, vi_embedding, expiry=86400)
-                
-            if not en_embedding:
-                en_embedding = await self.create_embedding(en_text)
-                await redis_service.set_cache(en_cache_key, en_embedding, expiry=86400)
+            # Tạo embeddings cho cả hai văn bản song song
+            vi_embedding, en_embedding = await asyncio.gather(
+                self.create_embedding(vi_text),
+                self.create_embedding(en_text)
+            )
             
             # Tính cosine similarity
             return await self.calculate_similarity(vi_embedding, en_embedding)
@@ -182,20 +297,74 @@ class EmbeddingService:
             
         Returns:
             float: Độ tương đồng cosine (0-1)
+            
+        Raises:
+            ValueError: Nếu vectors không hợp lệ
         """
+        if not embedding1 or not embedding2:
+            raise ValueError("Cả hai embedding vectors đều cần được cung cấp")
+            
         try:
-            # Tính toán trong ThreadPoolExecutor để không block event loop
-            with ThreadPoolExecutor() as executor:
-                def compute_similarity():
-                    vec1 = np.array(embedding1)
-                    vec2 = np.array(embedding2)
-                    similarity = np.dot(vec1, vec2)
-                    return float(similarity)
+            # Tính toán trong executor để tránh blocking
+            def compute_similarity():
+                vec1 = np.array(embedding1)
+                vec2 = np.array(embedding2)
+                # Clip để đảm bảo giá trị nằm trong khoảng [0, 1]
+                similarity = float(np.clip(np.dot(vec1, vec2), 0.0, 1.0))
+                return similarity
                 
-                return await asyncio.get_event_loop().run_in_executor(
-                    executor, compute_similarity
-                )
+            return await asyncio.get_event_loop().run_in_executor(
+                self._executor, compute_similarity
+            )
             
         except Exception as e:
-            logger.error(f"Lỗi khi tính similarity: {str(e)}")
+            logger.error(f"Lỗi khi tính similarity: {str(e)}", exc_info=True)
+            raise RuntimeError(f"Lỗi khi tính similarity: {str(e)}")
+
+    @lru_cache(maxsize=1000)
+    def _fast_similarity_cache(self, emb1_key: str, emb2_key: str) -> float:
+        """
+        Tính toán similarity với in-memory cache (sử dụng cho các truy vấn lặp lại)
+        
+        Args:
+            emb1_key: Khóa đại diện cho embedding 1
+            emb2_key: Khóa đại diện cho embedding 2
+            
+        Returns:
+            float: Giá trị similarity đã được cache
+        """
+        # Phương thức này chỉ dùng để làm cache wrapper,
+        # không triển khai thực tế vì cần await các hàm async
+        pass
+
+    async def bulk_similarity(self, query_embedding: List[float], 
+                             target_embeddings: List[List[float]]) -> List[float]:
+        """
+        Tính toán độ tương đồng giữa một embedding và nhiều embeddings khác
+        
+        Args:
+            query_embedding: Vector embedding đầu vào
+            target_embeddings: Danh sách các vector embedding cần so sánh
+            
+        Returns:
+            List[float]: Danh sách các điểm tương đồng
+        """
+        try:
+            # Tính toán song song
+            def compute_bulk_similarities():
+                query_vec = np.array(query_embedding)
+                target_vecs = np.array(target_embeddings)
+                
+                # Tính dot product một lần cho tất cả
+                similarities = np.dot(target_vecs, query_vec)
+                
+                # Clip và trả về kết quả
+                return np.clip(similarities, 0.0, 1.0).tolist()
+            
+            return await asyncio.get_event_loop().run_in_executor(
+                self._executor, compute_bulk_similarities
+            )
+            
+        except Exception as e:
+            logger.error(f"Lỗi khi tính bulk similarity: {str(e)}", exc_info=True)
             raise
