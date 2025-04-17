@@ -261,14 +261,21 @@ async def get_analysis(
             message="CV is being analyzed",
             data="CV is being analyzed"
         )
-
-    if cv.analysis_status == "failed":
+        
+    if cv.analysis_status == "pending":
         return BaseResponseModel(
-            code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            message="CV analysis failed",
-            data=cv.analysis_error
+            code=status.HTTP_202_ACCEPTED,
+            message="CV analysis is pending",
+            data="CV analysis is pending"
         )
-
+        
+    if not cv.analysis_status == "completed":
+        return BaseResponseModel(
+            code=status.HTTP_400_BAD_REQUEST,
+            message="CV analysis is not completed",
+            data="CV analysis is not completed"
+        )
+        
     response = {
         "status": cv.analysis_status,
         "basic_analysis": {

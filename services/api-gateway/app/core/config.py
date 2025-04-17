@@ -47,25 +47,12 @@ class Settings(BaseSettings):
             "/users/{user_id}",
             "/users/{user_id}/disable",
             "/users/{user_id}/enable",
-            "/health"
         ]),
         "career_advisor": (CAREER_ADVISOR_SERVICE_URL, [
-            "/users",
-            "/cv",
-            "/career-profiles",
-            "/career-advisor", 
-            "/users/me",
-            "/users/{user_id}",
             "/cv/upload",
             "/cv/list",
             "/cv/{cv_id}",
             "/cv/{cv_id}/analyze",
-            "/career-profiles/",
-            "/career-profiles/{profile_id}",
-            "/career-advisor/analyze",
-            "/career-advisor/analyze/{task_id}",
-            "/career-advisor/recommendations",
-            "/health"
         ]),
         "interview": (INTERVIEW_SERVICE_URL, [
             "/interviews",
@@ -76,7 +63,6 @@ class Settings(BaseSettings):
             "/practice-sessions",
             "/practice-sessions/{session_id}",
             "/practice-sessions/{session_id}/answer",
-            "/health"
         ]),
     }
     
