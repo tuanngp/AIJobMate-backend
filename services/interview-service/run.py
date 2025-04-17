@@ -14,11 +14,11 @@ def create_env_file():
     Tạo file .env nếu chưa tồn tại
     """
     if not os.path.exists(".env"):
-        logger.info("Tạo file .env từ .env.sample...")
+        logger.info("Tạo file .env từ .env.example...")
         
-        # Kiểm tra nếu .env.sample tồn tại
-        if os.path.exists(".env.sample"):
-            with open(".env.sample", "r") as sample_file:
+        # Kiểm tra nếu .env.example tồn tại
+        if os.path.exists(".env.example"):
+            with open(".env.example", "r") as sample_file:
                 env_content = sample_file.read()
             
             # Thêm secret key ngẫu nhiên
@@ -29,13 +29,13 @@ def create_env_file():
             
             logger.info("Đã tạo file .env. Vui lòng cập nhật các thông tin API keys trước khi chạy ứng dụng.")
         else:
-            logger.warning("Không tìm thấy file .env.sample. Vui lòng tạo file .env thủ công.")
+            logger.warning("Không tìm thấy file .env.example. Vui lòng tạo file .env thủ công.")
 
 def main():
     """
     Hàm chính để chạy ứng dụng
     """
-    parser = argparse.ArgumentParser(description="Chạy AI Career Advisor Service")
+    parser = argparse.ArgumentParser(description="Chạy AI Interview Service")
     parser.add_argument("--host", default="127.0.0.1", help="Host để bind server")
     parser.add_argument("--port", type=int, default=8003, help="Port để bind server")
     parser.add_argument("--reload", action="store_true", help="Tự động reload khi code thay đổi")
@@ -48,7 +48,7 @@ def main():
     # Load biến môi trường
     load_dotenv(dotenv_path=".env", override=True)
     
-    logger.info(f"Chạy AI Career Advisor Service tại http://{args.host}:{args.port}")
+    logger.info(f"Chạy AI Interview Service tại http://{args.host}:{args.port}")
     logger.info("Truy cập http://localhost:8003/docs để xem Swagger UI API documentation")
     
     # Chạy ứng dụng

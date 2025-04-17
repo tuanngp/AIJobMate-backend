@@ -15,7 +15,7 @@ class GatewayHandler:
 
     async def verify_token(self, token: str) -> Dict[str, Any]:
         """
-        Verify JWT token với auth service.
+        Verify token with auth service.
         """
         try:
             print(f"{settings.AUTH_SERVICE_URL}{settings.API_PREFIX}/auth/verify")
@@ -30,19 +30,19 @@ class GatewayHandler:
             elif response.status_code == 401:
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Token không hợp lệ hoặc hết hạn",
+                    detail="Token invalid or expired",
                     headers={"WWW-Authenticate": "Bearer"},
                 )
             else:
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="Lỗi xác thực với auth service",
+                    detail="Internal server error",
                 )
 
         except httpx.RequestError:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Không thể kết nối tới auth service",
+                detail="Service unavailable",
             )
 
     def get_target_service(self, path: str) -> Optional[str]:
@@ -121,7 +121,7 @@ class GatewayHandler:
         if not target_service:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Service không tồn tại cho path: {path}"
+                detail=f"Service not found for path: {path}"
             )
 
         # Setup headers to forward
