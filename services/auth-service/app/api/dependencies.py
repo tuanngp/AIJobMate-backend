@@ -1,14 +1,15 @@
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
-from typing import Generator
 from app.core.security import verify_token
 from app.services.user_service import UserService
 from app.models.user import User
-from app.models.token import TokenData
 from app.db.database import get_db
+from app.core.config import settings
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+oauth2_scheme = OAuth2PasswordBearer(
+    tokenUrl=f"{settings.API_V1_STR}/auth/login")
+
 
 async def get_current_user(
     token: str = Depends(oauth2_scheme),
@@ -31,6 +32,7 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+
 async def get_current_active_user(
     current_user: User = Depends(get_current_user)
 ) -> User:
@@ -42,6 +44,7 @@ async def get_current_active_user(
         )
     return current_user
 
+
 async def get_current_admin_user(
     current_user: User = Depends(get_current_active_user),
 ) -> User:
@@ -52,6 +55,7 @@ async def get_current_admin_user(
             detail="The user doesn't have enough privileges"
         )
     return current_user
+
 
 def check_permissions(required_roles: list[str]):
     """Check if user has required roles."""

@@ -14,11 +14,11 @@ def create_env_file():
     Tạo file .env nếu chưa tồn tại
     """
     if not os.path.exists(".env"):
-        logger.info("Tạo file .env từ .env.sample...")
+        logger.info("Tạo file .env từ .env.example...")
         
-        # Kiểm tra nếu .env.sample tồn tại
-        if os.path.exists(".env.sample"):
-            with open(".env.sample", "r") as sample_file:
+        # Kiểm tra nếu .env.example tồn tại
+        if os.path.exists(".env.example"):
+            with open(".env.example", "r") as sample_file:
                 env_content = sample_file.read()
             
             # Thêm secret key ngẫu nhiên
@@ -29,7 +29,7 @@ def create_env_file():
             
             logger.info("Đã tạo file .env. Vui lòng cập nhật các thông tin cấu hình trước khi chạy ứng dụng.")
         else:
-            logger.warning("Không tìm thấy file .env.sample. Vui lòng tạo file .env thủ công.")
+            logger.warning("Không tìm thấy file .env.example. Vui lòng tạo file .env thủ công.")
 
 def main():
     """

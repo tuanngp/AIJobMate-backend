@@ -7,6 +7,7 @@ from app.db.session import engine, SessionLocal
 from app.db.base import Base
 from prometheus_client import make_asgi_app
 from contextlib import asynccontextmanager
+from app.services.connection_manager import ConnectionManager
 import logging
 
 # Cấu hình logging
@@ -15,6 +16,9 @@ logger = logging.getLogger(__name__)
 
 # Tạo database tables
 Base.metadata.create_all(bind=engine)
+
+# Tạo instance của ConnectionManager
+connection_manager = ConnectionManager()
 
 # Lifespan event handler
 @asynccontextmanager
@@ -28,6 +32,7 @@ async def lifespan(app: FastAPI):
     
     # Dọn dẹp tài nguyên khi shutdown
     logger.info("Shutting down the application...")
+    await connection_manager.close_all()
 
 
 # Tạo ứng dụng FastAPI
@@ -92,4 +97,4 @@ app.openapi = custom_openapi
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True) 
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)

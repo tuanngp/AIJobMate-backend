@@ -1,55 +1,42 @@
-from typing import Optional, Dict, Any
-from pydantic import BaseModel, EmailStr, validator
-import json
+from datetime import datetime
+from typing import List, Optional
+from pydantic import BaseModel, EmailStr, field_serializer
+from app.models.user import Role
 
-# Các schemas cơ bản
 class UserBase(BaseModel):
-    email: Optional[EmailStr] = None
-    full_name: Optional[str] = None
-    is_active: Optional[bool] = True
-    is_superuser: Optional[bool] = False
-
-# Schema cho việc tạo user
-class UserCreate(UserBase):
     email: EmailStr
+    username: str
+    full_name: Optional[str] = None
+
+class UserCreate(UserBase):
     password: str
-    profile_metadata: Optional[Dict[str, Any]] = None
-    
-    @validator("profile_metadata", pre=True)
-    def validate_profile_metadata(cls, v):
-        if isinstance(v, str):
-            return json.loads(v)
-        return v
+    roles: List[str] = ["user"]
 
-# Schema cho việc update user
-class UserUpdate(UserBase):
+class UserUpdate(BaseModel):
+    full_name: Optional[str] = None
     password: Optional[str] = None
-    profile_metadata: Optional[Dict[str, Any]] = None
+    disabled: Optional[bool] = None
     
-    @validator("profile_metadata", pre=True)
-    def validate_profile_metadata(cls, v):
-        if isinstance(v, str):
-            return json.loads(v)
-        return v
-
-# Schema cho việc đọc thông tin user
 class UserInDBBase(UserBase):
-    id: str
-    profile_metadata: Optional[Dict[str, Any]] = None
-    
-    @validator("profile_metadata", pre=True)
-    def validate_profile_metadata(cls, v):
-        if isinstance(v, str):
-            return json.loads(v)
-        return v
-    
+    id: int
+    disabled: bool = False
+    created_at: datetime
+    updated_at: datetime
+    roles: List[Role]
+
     class Config:
-        orm_mode = True
+        from_attributes = True
+        arbitrary_types_allowed = True
 
-# Schema để trả về từ API
-class User(UserInDBBase):
-    pass
+    @field_serializer('roles')
+    def serialize_roles(self, roles: List[Role], _info) -> List[str]:
+        if not roles:
+            return []
+        return [role.name for role in roles]
 
-# Schema chỉ sử dụng trong DB
+
 class UserInDB(UserInDBBase):
-    hashed_password: str 
+    hashed_password: str
+    
+class UserResponse(UserInDBBase):
+    pass

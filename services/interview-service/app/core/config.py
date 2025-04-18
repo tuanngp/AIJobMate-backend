@@ -59,8 +59,18 @@ class Settings(BaseSettings):
     # Rate limiting
     RATE_LIMIT_PER_MINUTE: int = int(os.getenv("RATE_LIMIT_PER_MINUTE", 60))
     
+    # Storage settings
+    STORAGE_TYPE: str = "local"  # "s3" or "local"
+    LOCAL_STORAGE_PATH: str = os.path.join(os.getcwd(), "storage")
+    
+    # AWS S3 settings (if using S3)
+    AWS_ACCESS_KEY_ID: str = ""
+    AWS_SECRET_ACCESS_KEY: str = ""
+    AWS_REGION: str = "ap-southeast-1"
+    S3_BUCKET_NAME: str = ""
+
     class Config:
         case_sensitive = True
         env_file = ".env"
 
-settings = Settings() 
+settings = Settings()

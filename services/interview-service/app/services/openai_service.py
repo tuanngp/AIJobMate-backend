@@ -164,44 +164,72 @@ async def analyze_interview_answer(
     question: str,
     question_type: str,
     user_answer: str,
-    job_title: str
+    job_title: str,
+    job_description: Optional[str] = None,
+    industry: Optional[str] = None
 ) -> Dict[str, Any]:
     """
-    Phân tích câu trả lời phỏng vấn của người dùng và đưa ra phản hồi.
+    Phân tích câu trả lời phỏng vấn của người dùng và đưa ra phản hồi chi tiết.
     
     Args:
         question: Câu hỏi phỏng vấn.
         question_type: Loại câu hỏi (technical, behavioral, situational).
         user_answer: Câu trả lời của người dùng.
         job_title: Vị trí công việc.
+        job_description: Mô tả công việc (nếu có).
+        industry: Ngành nghề (nếu có).
         
     Returns:
-        Dict[str, Any]: Phản hồi AI về câu trả lời của người dùng.
+        Dict[str, Any]: Phản hồi AI chi tiết về câu trả lời của người dùng.
     """
     try:
         # Tạo prompt
         prompt = f"""
-        Bạn là AI Interview Evaluator, một chuyên gia đánh giá câu trả lời phỏng vấn.
-        Hãy đánh giá câu trả lời dưới đây cho vị trí {job_title}.
+        Bạn là AI Interview Evaluator, một chuyên gia đánh giá câu trả lời phỏng vấn với nhiều năm kinh nghiệm.
+        Hãy đánh giá chi tiết câu trả lời dưới đây cho vị trí {job_title} {'trong ngành ' + industry if industry else ''}.
+        
+        Thông tin công việc: {job_description or 'Không có thông tin chi tiết'}
         
         Câu hỏi ({question_type}): {question}
         
         Câu trả lời của ứng viên: {user_answer}
         
-        Yêu cầu:
-        1. Đánh giá điểm mạnh và điểm yếu của câu trả lời.
-        2. Đề xuất cách cải thiện câu trả lời.
-        3. Đánh giá mức độ phù hợp của câu trả lời với câu hỏi.
-        4. Cho điểm từ 1-10 dựa trên chất lượng câu trả lời.
+        Yêu cầu đánh giá chi tiết:
+        1. Điểm mạnh: Xác định và giải thích cụ thể các điểm mạnh trong câu trả lời.
+        2. Điểm yếu: Xác định và giải thích các điểm yếu hoặc thiếu sót.
+        3. Cấu trúc và độ rõ ràng: Đánh giá tính mạch lạc, cấu trúc câu trả lời.
+        4. Độ liên quan: Đánh giá mức độ trả lời đúng câu hỏi được hỏi.
+        5. Mức độ chuyên môn: Đánh giá kiến thức chuyên môn thể hiện qua câu trả lời.
+        6. Đề xuất cải thiện: Đề xuất chi tiết cách cải thiện câu trả lời.
+        7. Câu trả lời mẫu: Cung cấp một ví dụ câu trả lời tốt (ngắn gọn).
+        8. Điểm đánh giá: Cho điểm từng hạng mục và điểm tổng thể (1-10).
         
         Hãy trả về kết quả dưới dạng JSON với cấu trúc sau:
         {{
             "strengths": ["Điểm mạnh 1", "Điểm mạnh 2", ...],
             "weaknesses": ["Điểm yếu 1", "Điểm yếu 2", ...],
+            "structure_clarity": {{
+                "score": 7,
+                "comments": "Nhận xét về cấu trúc câu trả lời"
+            }},
+            "relevance": {{
+                "score": 8,
+                "comments": "Nhận xét về độ liên quan đến câu hỏi"
+            }},
+            "expertise_level": {{
+                "score": 6,
+                "comments": "Nhận xét về mức độ chuyên môn thể hiện"
+            }},
             "improvement_suggestions": ["Gợi ý 1", "Gợi ý 2", ...],
-            "relevance_score": 8,
+            "sample_answer": "Câu trả lời mẫu ngắn gọn và hiệu quả",
+            "category_scores": {{
+                "content": 7,
+                "delivery": 6,
+                "relevance": 8,
+                "expertise": 6
+            }},
             "overall_score": 7,
-            "feedback_summary": "Tóm tắt đánh giá tổng thể"
+            "feedback_summary": "Tóm tắt đánh giá tổng thể chi tiết"
         }}
         
         Đảm bảo phản hồi của bạn chỉ chứa JSON hợp lệ, không có văn bản giới thiệu hoặc giải thích.
@@ -212,11 +240,11 @@ async def analyze_interview_answer(
             extra_headers=extra_headers,
             model=settings.AI_MODEL,
             messages=[
-                {"role": "system", "content": "Bạn là AI Interview Evaluator, một chuyên gia đánh giá câu trả lời phỏng vấn."},
+                {"role": "system", "content": "Bạn là AI Interview Evaluator, một chuyên gia đánh giá câu trả lời phỏng vấn với nhiều năm kinh nghiệm. Bạn đưa ra phản hồi chi tiết, chuyên nghiệp và hữu ích."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.5,
-            max_tokens=1500
+            max_tokens=2000
         )
         
         # Xử lý phản hồi

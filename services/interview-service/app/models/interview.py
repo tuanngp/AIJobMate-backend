@@ -21,4 +21,5 @@ class Interview(Base):
     
     # Relationships
     questions = relationship("InterviewQuestion", back_populates="interview", cascade="all, delete-orphan")
-    user = relationship("User") 
+    user = relationship("User")
+    sessions = relationship("PracticeSession", back_populates="interview", cascade="all, delete-orphan") 

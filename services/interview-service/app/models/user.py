@@ -1,5 +1,6 @@
 from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean
 from sqlalchemy.sql import func
+from sqlalchemy.orm import relationship
 
 from app.db.session import Base
 
@@ -14,4 +15,7 @@ class User(Base):
     experience = Column(Text, nullable=True)  # JSON string of experience
     education = Column(Text, nullable=True)  # JSON string of education
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now()) 
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    
+    # Relationships
+    practice_sessions = relationship("PracticeSession", back_populates="user") 
