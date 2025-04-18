@@ -3,11 +3,18 @@ import logging
 import asyncio
 from typing import Any, Dict, List, Optional
 from functools import wraps
+from pydub import AudioSegment
+import os
+import tempfile
 
 from openai import AsyncOpenAI
 from tenacity import retry, stop_after_attempt, wait_random_exponential
-
+import speech_recognition as sr
+import logging
+from fastapi import UploadFile
+from typing import Optional
 from app.core.config import settings
+from faster_whisper import WhisperModel
 
 # Cấu hình logging
 logger = logging.getLogger(__name__)
@@ -24,6 +31,9 @@ extra_headers = {
     "X-Title": settings.SITE_NAME,      # Tên ứng dụng của bạn
     "Content-Type": "application/json"
 }
+
+FILLER_WORDS = ["ờ", "ừ", "à", "ừm", "um", "uh", "ah", "hờ", "hừ", "ơ", "vâng", "à à"]
+
 
 def with_timeout(timeout_seconds: int = 60):
     """
@@ -234,3 +244,90 @@ async def analyze_interview_answer(
     except Exception as e:
         logger.error(f"Lỗi khi phân tích câu trả lời phỏng vấn: {str(e)}")
         raise 
+
+
+# # Hàm loại bỏ filler
+# def remove_fillers(text: str) -> str:
+#     pattern = r"\b(" + "|".join(re.escape(filler) for filler in FILLER_WORDS) + r")\b"
+#     cleaned = re.sub(pattern, "", text, flags=re.IGNORECASE)
+#     return re.sub(r"\s+", " ", cleaned).strip()
+
+# # Hàm chính xử lý âm thanh
+# async def transcribe_audio(file: UploadFile, language: Optional[str] = "vi-VN") -> str:
+#     """
+#     Nhận diện giọng nói từ file âm thanh bất kỳ bằng Google Web Speech API.
+#     File sẽ được chuyển sang định dạng WAV trước khi nhận diện.
+#     """
+#     try:
+#         # Tạo file tạm với tên ngẫu nhiên và định dạng gốc
+#         input_ext = file.filename.split(".")[-1]
+#         temp_input = tempfile.NamedTemporaryFile(delete=False, suffix=f".{input_ext}")
+#         temp_input.write(await file.read())
+#         temp_input.close()
+
+#         # Đường dẫn output WAV
+#         temp_output = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
+#         temp_output.close()
+
+#         # Chuyển định dạng file âm thanh sang WAV bằng pydub
+#         audio = AudioSegment.from_file(temp_input.name)
+#         audio.export(temp_output.name, format="wav")
+
+#         # Nhận diện giọng nói từ file WAV
+#         recognizer = sr.Recognizer()
+#         with sr.AudioFile(temp_output.name) as source:
+#             audio_data = recognizer.record(source)
+
+#         # Gọi API Google
+#         text = recognizer.recognize_google(audio_data, language=language)
+
+#         # Tiền xử lý: loại bỏ filler và chấm câu
+#         # text_no_fillers = remove_fillers(text)
+
+#         # Xoá file tạm
+#         os.remove(temp_input.name)
+#         os.remove(temp_output.name)
+
+#         return text
+
+#     except sr.UnknownValueError:
+#         logger.warning("Không thể nhận diện giọng nói.")
+#         return "Không thể nhận diện được nội dung từ âm thanh."
+
+#     except sr.RequestError as e:
+#         logger.error(f"Lỗi khi gọi Google Speech API: {e}")
+#         raise Exception("Lỗi kết nối tới Google Speech API.")
+
+#     except Exception as e:
+#         logger.error(f"Lỗi không xác định: {str(e)}")
+#         raise Exception("Lỗi trong quá trình xử lý file âm thanh.")
+
+
+async def transcribe_audio(file: UploadFile) -> str:
+    try:
+        # Lưu file tạm
+        input_ext = file.filename.split(".")[-1]
+        temp_input = tempfile.NamedTemporaryFile(delete=False, suffix=f".{input_ext}")
+        temp_input.write(await file.read())
+        temp_input.close()
+
+        # Chuẩn hoá file WAV mono 16kHz
+        temp_output = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
+        temp_output.close()
+        audio = AudioSegment.from_file(temp_input.name)
+        audio = audio.set_channels(1).set_frame_rate(16000)
+        audio.export(temp_output.name, format="wav")
+
+        # Nhận diện không cần truyền ngôn ngữ
+        model = WhisperModel("base", compute_type="int8")
+        segments, info = model.transcribe(temp_output.name, beam_size=5)
+        text = " ".join([seg.text for seg in segments])
+
+        # Dọn file tạm
+        os.remove(temp_input.name)
+        os.remove(temp_output.name)
+
+        return f"[{info.language}] {text}"  # Gợi ý: in kèm ngôn ngữ nhận diện được
+
+    except Exception as e:
+        return f"Lỗi: {str(e)}"

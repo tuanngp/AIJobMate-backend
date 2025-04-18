@@ -3,8 +3,9 @@ import logging
 from typing import Any, List, Optional
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query, Form
 from sqlalchemy.orm import Session
+from fastapi import APIRouter, UploadFile, File, Depends
 
 from app.api.deps import get_current_user, get_db
 from app.models.user import User
@@ -18,8 +19,9 @@ from app.schemas.interview import (
     GenerateQuestionsRequest,
     GenerateQuestionsResponse,
 )
-from app.services.openai_service import generate_interview_questions, analyze_interview_answer
+from app.services.openai_service import generate_interview_questions, analyze_interview_answer, transcribe_audio
 from app.services.redis_service import RedisService
+
 
 # Cấu hình logging
 logger = logging.getLogger(__name__)
@@ -262,3 +264,19 @@ def delete_interview(
     db.commit()
     
     return {"message": "Đã xóa phỏng vấn thành công"} 
+
+
+@router.post("/speech-to-text")
+async def convert_speech_to_text(
+    file: UploadFile = File(...),  # File âm thanh được tải lên
+    current_user: User = Depends(get_current_user)  # Lấy thông tin người dùng
+):
+    """
+    Nhận diện giọng nói từ file âm thanh và chuyển thành văn bản.
+    Ngôn ngữ sẽ được tự động nhận diện từ file âm thanh.
+    """
+    try:
+        text = await transcribe_audio(file)  # Hàm sẽ tự động nhận diện ngôn ngữ và chuyển thành text
+        return {"transcript": text}  # Trả về văn bản
+    except Exception as e:
+        return {"error": str(e)}  # Trả về lỗi nếu có
