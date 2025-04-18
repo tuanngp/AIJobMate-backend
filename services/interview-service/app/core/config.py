@@ -54,7 +54,7 @@ class Settings(BaseSettings):
     OPENROUTER_API_KEY: str = os.getenv("OPENROUTER_API_KEY", "")
     SITE_URL: str = os.getenv("SITE_URL", "http://localhost:3000")
     SITE_NAME: str = os.getenv("SITE_NAME", "AI Interview Service")
-    AI_MODEL: str = os.getenv("AI_MODEL", "deepseek/deepseek-r1:free")
+    AI_MODEL: str = os.getenv("AI_MODEL", "deepseek/deepseek-chat-v3-0324:free")
     
     # Rate limiting
     RATE_LIMIT_PER_MINUTE: int = int(os.getenv("RATE_LIMIT_PER_MINUTE", 60))

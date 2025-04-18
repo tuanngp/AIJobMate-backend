@@ -19,3 +19,7 @@ class InterviewQuestion(Base):
     
     # Relationships
     interview = relationship("Interview", back_populates="questions") 
+    recordings = relationship(
+        "AnswerRecording",
+        back_populates="question"
+    )

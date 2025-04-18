@@ -8,7 +8,7 @@ class PracticeSession(Base):
     __tablename__ = "practice_sessions"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"))
+    user_id = Column(Integer)
     interview_id = Column(Integer, ForeignKey("interviews.id"))
     start_time = Column(DateTime(timezone=True), server_default=func.now())
     end_time = Column(DateTime(timezone=True), nullable=True)
@@ -19,7 +19,6 @@ class PracticeSession(Base):
     settings = Column(JSON, nullable=True)
 
     # Relationships
-    user = relationship("User", back_populates="practice_sessions")
     interview = relationship("Interview", back_populates="sessions")
     recordings = relationship("AnswerRecording", back_populates="session", cascade="all, delete-orphan")
 
@@ -37,4 +36,4 @@ class AnswerRecording(Base):
 
     # Relationships
     session = relationship("PracticeSession", back_populates="recordings")
-    question = relationship("InterviewQuestion")
+    question = relationship("InterviewQuestion", back_populates="recordings")

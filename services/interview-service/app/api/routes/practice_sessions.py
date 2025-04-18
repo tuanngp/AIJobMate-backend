@@ -1,8 +1,7 @@
-from typing import List
+from typing import Any, Dict, List
 from fastapi import APIRouter, Depends, BackgroundTasks, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, get_db
-from app.models.user import User
 from app.models.practice_session import PracticeSession
 from app.schemas.practice_session import (
     PracticeSessionCreate,
@@ -26,19 +25,19 @@ async def create_session(
     *,
     db: Session = Depends(get_db),
     data: PracticeSessionCreate,
-    current_user: User = Depends(get_current_user)
+    current_user: Dict[str, Any] = Depends(get_current_user)
 ):
     """Tạo một phiên luyện tập mới"""
-    return await session_service.create_session(db, current_user.id, data)
+    return await session_service.create_session(db, current_user["id"], data)
 
 @router.get("/{session_id}", response_model=PracticeSessionResponse)
 async def get_session(
     session_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: Dict[str, Any] = Depends(get_current_user)
 ):
     """Lấy thông tin chi tiết của một phiên luyện tập"""
-    return await session_service.get_session(db, current_user.id, session_id)
+    return await session_service.get_session(db, current_user["id"], session_id)
 
 @router.post("/{session_id}/answers", response_model=AnswerRecordingResponse)
 async def submit_answer(
@@ -46,12 +45,12 @@ async def submit_answer(
     data: AnswerRecordingCreate,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: Dict[str, Any] = Depends(get_current_user)
 ):
     """Submit câu trả lời cho một câu hỏi trong phiên luyện tập"""
     return await session_service.submit_answer(
         db, 
-        current_user.id,
+        current_user["id"],
         session_id, 
         data,
         background_tasks
@@ -62,10 +61,10 @@ async def list_sessions(
     skip: int = 0,
     limit: int = 20,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: Dict[str, Any] = Depends(get_current_user)
 ):
     """Lấy danh sách các phiên luyện tập của người dùng"""
-    return await session_service.list_sessions(db, current_user.id, skip, limit)
+    return await session_service.list_sessions(db, current_user["id"], skip, limit)
 
 @router.websocket("/ws/{session_id}")
 async def session_websocket(
@@ -81,7 +80,7 @@ async def session_websocket(
         # Verify session belongs to user
         session = db.query(PracticeSession).filter(
             PracticeSession.id == session_id,
-            PracticeSession.user_id == current_user.id
+            PracticeSession.user_id == current_user["id"]
         ).first()
         if not session:
             await websocket.close(code=4004)
