@@ -318,8 +318,8 @@ async def transcribe_audio(file: UploadFile) -> str:
         audio = audio.set_channels(1).set_frame_rate(16000)
         audio.export(temp_output.name, format="wav")
 
-        # Nhận diện không cần truyền ngôn ngữ
-        model = WhisperModel("base", compute_type="int8")
+        # Nhận diện không cần truyền ngôn ngữ 
+        model = WhisperModel("large", compute_type="int8")
         segments, info = model.transcribe(temp_output.name, beam_size=5)
         text = " ".join([seg.text for seg in segments])
 
