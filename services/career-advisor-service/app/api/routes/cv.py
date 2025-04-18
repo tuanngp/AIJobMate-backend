@@ -138,6 +138,30 @@ async def run_analysis(cv_id: int, db: Session):
             except Exception as db_error:
                 logger.error(f"Failed to update error status: {str(db_error)}")
 
+def run_analysis_sync(cv_id: int):
+    """Phiên bản đồng bộ của run_analysis để chạy trong process riêng biệt"""
+    from app.db.session import SessionLocal
+    from app.api.routes.cv import run_analysis
+    
+    # Tạo session mới trong process riêng
+    db = SessionLocal()
+    try:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(run_analysis(cv_id, db))
+    except Exception as e:
+        logging.error(f"Error in run_analysis_sync for CV {cv_id}: {str(e)}", exc_info=True)
+        
+        try:
+            cv = db.query(CV).filter(CV.id == cv_id).first()
+            if cv:
+                cv.analysis_status = "failed"
+                cv.analysis_error = str(e)
+                db.commit()
+        except Exception as db_error:
+            logging.error(f"Failed to update error status for CV {cv_id}: {str(db_error)}")
+    finally:
+        db.close()
 
 def _update_cv_with_analysis(cv: CV, analysis_result: Dict[str, Any]) -> None:
     """
@@ -220,7 +244,14 @@ async def analyze_cv(
             data="CV analysis is already completed"
         )
 
-    background_tasks.add_task(run_analysis, cv_id, db)
+    cv.analysis_status = "processing"
+    cv.last_analyzed_at = datetime.utcnow()
+    db.commit()
+    
+    from concurrent.futures import ProcessPoolExecutor
+    executor = ProcessPoolExecutor(max_workers=2)
+    loop = asyncio.get_event_loop()
+    loop.run_in_executor(executor, run_analysis_sync, cv_id)
 
     return BaseResponseModel(
         code=status.HTTP_200_OK,
