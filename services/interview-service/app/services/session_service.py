@@ -1,13 +1,15 @@
-from typing import List, Optional
+import logging
 from datetime import datetime
 from fastapi import HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
-
+from app.models.interview_question import InterviewQuestion
 from app.models.practice_session import PracticeSession, AnswerRecording
 from app.models.interview import Interview
 from app.schemas.practice_session import PracticeSessionCreate, AnswerRecordingCreate
 from app.services.openai_service import analyze_interview_answer
 from app.services.storage_service import StorageService
+
+logger = logging.getLogger(__name__)
 
 class SessionService:
     def __init__(self):

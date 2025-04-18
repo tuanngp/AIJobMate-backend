@@ -6,7 +6,6 @@ from functools import wraps
 from pydub import AudioSegment
 import os
 import tempfile
-
 from openai import AsyncOpenAI
 from tenacity import retry, stop_after_attempt, wait_random_exponential
 import speech_recognition as sr
@@ -31,9 +30,6 @@ extra_headers = {
     "X-Title": settings.SITE_NAME,      # Tên ứng dụng của bạn
     "Content-Type": "application/json"
 }
-
-FILLER_WORDS = ["ờ", "ừ", "à", "ừm", "um", "uh", "ah", "hờ", "hừ", "ơ", "vâng", "à à"]
-
 
 def with_timeout(timeout_seconds: int = 60):
     """
@@ -62,7 +58,7 @@ async def generate_interview_questions(
 ) -> List[Dict[str, Any]]:
     """
     Sử dụng AI để tạo câu hỏi phỏng vấn dựa trên các tiêu chí đầu vào.
-    
+
     Args:
         job_title: Tên vị trí công việc.
         job_description: Mô tả công việc (tùy chọn).
@@ -71,7 +67,7 @@ async def generate_interview_questions(
         difficulty_level: Mức độ khó (easy, medium, hard).
         interview_type: Loại phỏng vấn (technical, behavioral, mixed).
         skills_required: Danh sách kỹ năng yêu cầu (tùy chọn).
-        
+
     Returns:
         List[Dict[str, Any]]: Danh sách các câu hỏi phỏng vấn với thông tin liên quan.
     """
@@ -86,25 +82,25 @@ async def generate_interview_questions(
             "interview_type": interview_type,
             "skills_required": skills_required or []
         }
-        
+
         # Tạo prompt
         prompt = f"""
         Bạn là AI Interview Assistant, một trợ lý tạo câu hỏi phỏng vấn chuyên nghiệp.
         Hãy tạo {num_questions} câu hỏi phỏng vấn cho vị trí {job_title} với các thông tin sau:
-        
+
         - Mô tả công việc: {job_description or 'Không có thông tin'}
         - Ngành: {industry or 'Không có thông tin'} 
         - Mức độ khó: {difficulty_level}
         - Loại phỏng vấn: {interview_type}
         - Kỹ năng yêu cầu: {', '.join(skills_required) if skills_required else 'Không có thông tin cụ thể'}
-        
+
         Quy tắc:
         1. Nếu loại phỏng vấn là "technical", tập trung vào các câu hỏi kỹ thuật liên quan đến vị trí.
         2. Nếu loại phỏng vấn là "behavioral", tập trung vào câu hỏi về hành vi, tình huống và kỹ năng mềm.
         3. Nếu loại phỏng vấn là "mixed", kết hợp cả hai loại câu hỏi trên.
         4. Độ khó của câu hỏi phải phù hợp với mức độ khó đã chọn.
         5. Mỗi câu hỏi phải có một câu trả lời mẫu chất lượng cao.
-        
+
         Hãy trả về kết quả dưới dạng JSON với cấu trúc sau:
         [
             {{
@@ -116,10 +112,10 @@ async def generate_interview_questions(
             }},
             ...
         ]
-        
+
         Đảm bảo phản hồi của bạn chỉ chứa JSON hợp lệ, không có văn bản giới thiệu hoặc giải thích.
         """
-        
+
         # Gọi API
         response = await client.chat.completions.create(
             extra_headers=extra_headers,
@@ -131,10 +127,10 @@ async def generate_interview_questions(
             temperature=0.7,
             max_tokens=3000
         )
-        
+
         # Xử lý phản hồi
         result_text = response.choices[0].message.content.strip()
-        
+
         # Chuyển đổi phản hồi thành JSON
         try:
             # Xử lý kết quả để đảm bảo chỉ lấy phần JSON
@@ -146,14 +142,14 @@ async def generate_interview_questions(
                 result_text = result_text.replace("```", "", 1)
                 if "```" in result_text:
                     result_text = result_text.split("```")[0]
-                    
+
             questions = json.loads(result_text.strip())
             return questions
         except json.JSONDecodeError as e:
             logger.error(f"Lỗi xử lý JSON: {str(e)}")
             logger.error(f"Dữ liệu nhận được: {result_text}")
             raise Exception("Không thể phân tích phản hồi từ AI. Vui lòng thử lại.")
-            
+
     except Exception as e:
         logger.error(f"Lỗi khi tạo câu hỏi phỏng vấn: {str(e)}")
         raise
@@ -170,7 +166,7 @@ async def analyze_interview_answer(
 ) -> Dict[str, Any]:
     """
     Phân tích câu trả lời phỏng vấn của người dùng và đưa ra phản hồi chi tiết.
-    
+
     Args:
         question: Câu hỏi phỏng vấn.
         question_type: Loại câu hỏi (technical, behavioral, situational).
@@ -178,7 +174,7 @@ async def analyze_interview_answer(
         job_title: Vị trí công việc.
         job_description: Mô tả công việc (nếu có).
         industry: Ngành nghề (nếu có).
-        
+
     Returns:
         Dict[str, Any]: Phản hồi AI chi tiết về câu trả lời của người dùng.
     """
@@ -187,13 +183,13 @@ async def analyze_interview_answer(
         prompt = f"""
         Bạn là AI Interview Evaluator, một chuyên gia đánh giá câu trả lời phỏng vấn với nhiều năm kinh nghiệm.
         Hãy đánh giá chi tiết câu trả lời dưới đây cho vị trí {job_title} {'trong ngành ' + industry if industry else ''}.
-        
+
         Thông tin công việc: {job_description or 'Không có thông tin chi tiết'}
-        
+
         Câu hỏi ({question_type}): {question}
-        
+
         Câu trả lời của ứng viên: {user_answer}
-        
+
         Yêu cầu đánh giá chi tiết:
         1. Điểm mạnh: Xác định và giải thích cụ thể các điểm mạnh trong câu trả lời.
         2. Điểm yếu: Xác định và giải thích các điểm yếu hoặc thiếu sót.
@@ -203,7 +199,7 @@ async def analyze_interview_answer(
         6. Đề xuất cải thiện: Đề xuất chi tiết cách cải thiện câu trả lời.
         7. Câu trả lời mẫu: Cung cấp một ví dụ câu trả lời tốt (ngắn gọn).
         8. Điểm đánh giá: Cho điểm từng hạng mục và điểm tổng thể (1-10).
-        
+
         Hãy trả về kết quả dưới dạng JSON với cấu trúc sau:
         {{
             "strengths": ["Điểm mạnh 1", "Điểm mạnh 2", ...],
@@ -231,10 +227,10 @@ async def analyze_interview_answer(
             "overall_score": 7,
             "feedback_summary": "Tóm tắt đánh giá tổng thể chi tiết"
         }}
-        
+
         Đảm bảo phản hồi của bạn chỉ chứa JSON hợp lệ, không có văn bản giới thiệu hoặc giải thích.
         """
-        
+
         # Gọi API
         response = await client.chat.completions.create(
             extra_headers=extra_headers,
@@ -246,10 +242,10 @@ async def analyze_interview_answer(
             temperature=0.5,
             max_tokens=2000
         )
-        
+
         # Xử lý phản hồi
         result_text = response.choices[0].message.content.strip()
-        
+
         # Chuyển đổi phản hồi thành JSON
         try:
             # Xử lý kết quả để đảm bảo chỉ lấy phần JSON
@@ -261,75 +257,17 @@ async def analyze_interview_answer(
                 result_text = result_text.replace("```", "", 1)
                 if "```" in result_text:
                     result_text = result_text.split("```")[0]
-                    
+
             feedback = json.loads(result_text.strip())
             return feedback
         except json.JSONDecodeError as e:
             logger.error(f"Lỗi xử lý JSON: {str(e)}")
             logger.error(f"Dữ liệu nhận được: {result_text}")
             raise Exception("Không thể phân tích phản hồi từ AI. Vui lòng thử lại.")
-            
+
     except Exception as e:
         logger.error(f"Lỗi khi phân tích câu trả lời phỏng vấn: {str(e)}")
-        raise 
-
-
-# # Hàm loại bỏ filler
-# def remove_fillers(text: str) -> str:
-#     pattern = r"\b(" + "|".join(re.escape(filler) for filler in FILLER_WORDS) + r")\b"
-#     cleaned = re.sub(pattern, "", text, flags=re.IGNORECASE)
-#     return re.sub(r"\s+", " ", cleaned).strip()
-
-# # Hàm chính xử lý âm thanh
-# async def transcribe_audio(file: UploadFile, language: Optional[str] = "vi-VN") -> str:
-#     """
-#     Nhận diện giọng nói từ file âm thanh bất kỳ bằng Google Web Speech API.
-#     File sẽ được chuyển sang định dạng WAV trước khi nhận diện.
-#     """
-#     try:
-#         # Tạo file tạm với tên ngẫu nhiên và định dạng gốc
-#         input_ext = file.filename.split(".")[-1]
-#         temp_input = tempfile.NamedTemporaryFile(delete=False, suffix=f".{input_ext}")
-#         temp_input.write(await file.read())
-#         temp_input.close()
-
-#         # Đường dẫn output WAV
-#         temp_output = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
-#         temp_output.close()
-
-#         # Chuyển định dạng file âm thanh sang WAV bằng pydub
-#         audio = AudioSegment.from_file(temp_input.name)
-#         audio.export(temp_output.name, format="wav")
-
-#         # Nhận diện giọng nói từ file WAV
-#         recognizer = sr.Recognizer()
-#         with sr.AudioFile(temp_output.name) as source:
-#             audio_data = recognizer.record(source)
-
-#         # Gọi API Google
-#         text = recognizer.recognize_google(audio_data, language=language)
-
-#         # Tiền xử lý: loại bỏ filler và chấm câu
-#         # text_no_fillers = remove_fillers(text)
-
-#         # Xoá file tạm
-#         os.remove(temp_input.name)
-#         os.remove(temp_output.name)
-
-#         return text
-
-#     except sr.UnknownValueError:
-#         logger.warning("Không thể nhận diện giọng nói.")
-#         return "Không thể nhận diện được nội dung từ âm thanh."
-
-#     except sr.RequestError as e:
-#         logger.error(f"Lỗi khi gọi Google Speech API: {e}")
-#         raise Exception("Lỗi kết nối tới Google Speech API.")
-
-#     except Exception as e:
-#         logger.error(f"Lỗi không xác định: {str(e)}")
-#         raise Exception("Lỗi trong quá trình xử lý file âm thanh.")
-
+        raise
 
 async def transcribe_audio(file: UploadFile) -> str:
     try:
@@ -346,7 +284,7 @@ async def transcribe_audio(file: UploadFile) -> str:
         audio = audio.set_channels(1).set_frame_rate(16000)
         audio.export(temp_output.name, format="wav")
 
-        # Nhận diện không cần truyền ngôn ngữ 
+        # Nhận diện không cần truyền ngôn ngữ
         model = WhisperModel("large", compute_type="int8")
         segments, info = model.transcribe(temp_output.name, beam_size=5)
         text = " ".join([seg.text for seg in segments])

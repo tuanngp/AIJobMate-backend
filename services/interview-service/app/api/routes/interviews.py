@@ -1,28 +1,21 @@
 import json
 import logging
-from typing import Any, List, Optional, Dict
-from uuid import uuid4
-
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query, Form, status
+from typing import Any, List, Dict
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 from fastapi import APIRouter, UploadFile, File, Depends
-
 from app.api.deps import get_current_user, get_db
 from app.models.interview import Interview
 from app.models.interview_question import InterviewQuestion
 from app.schemas.interview import (
     Interview as InterviewSchema,
-    InterviewCreate,
-    InterviewUpdate,
-    InterviewQuestion as InterviewQuestionSchema,
+    InterviewQuestion,
     GenerateQuestionsRequest,
     GenerateQuestionsResponse,
     AnalysisResponse,
-    AnswerFeedback
 )
 from app.services.openai_service import generate_interview_questions, analyze_interview_answer, transcribe_audio
 from app.schemas.response import BaseResponseModel
-
 from app.services.redis_service import RedisService
 
 
@@ -283,13 +276,13 @@ async def analyze_answer(
             "question": question.question,
             "question_type": question.question_type
         }
-        
+
         return BaseResponseModel(
             code=status.HTTP_200_OK,
             message="Phân tích câu trả lời thành công",
             data=response_data
         )
-        
+
     except Exception as e:
         logger.error(f"Lỗi khi phân tích câu trả lời: {str(e)}")
         return BaseResponseModel(
@@ -312,33 +305,43 @@ def delete_interview(
         .filter(Interview.id == interview_id, Interview.user_id == current_user["id"])
         .first()
     )
-    
+
     if not interview:
         return BaseResponseModel(
             code=status.HTTP_404_NOT_FOUND,
             message="Không tìm thấy phỏng vấn",
             errors={"interview": "Không tìm thấy phỏng vấn"}
         )
-    
+
     db.delete(interview)
     db.commit()
-    
+
     return BaseResponseModel(
         code=status.HTTP_200_OK,
         message="Đã xóa phỏng vấn thành công"
-    ) 
+    )
 
 @router.post("/speech-to-text")
 async def convert_speech_to_text(
+    interview_id: int,
     file: UploadFile = File(...),  # File âm thanh được tải lên
-    current_user: User = Depends(get_current_user)  # Lấy thông tin người dùng
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_current_user)
 ):
     """
     Nhận diện giọng nói từ file âm thanh và chuyển thành văn bản.
     Ngôn ngữ sẽ được tự động nhận diện từ file âm thanh.
     """
+
     try:
+        interview = (
+            db.query(InterviewQuestion)
+            .filter(InterviewQuestion.id == interview_id, InterviewQuestion.user_id == current_user["id"])
+            .first()
+        )
         text = await transcribe_audio(file)  # Hàm sẽ tự động nhận diện ngôn ngữ và chuyển thành text
+        interview.user_answer = text  # Lưu văn bản vào câu hỏi
+        db.add(interview)
         return {"transcript": text}  # Trả về văn bản
     except Exception as e:
         return {"error": str(e)}  # Trả về lỗi nếu có

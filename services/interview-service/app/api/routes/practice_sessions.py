@@ -1,10 +1,9 @@
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, BackgroundTasks, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
-
 from app.api.deps import get_current_user, get_db
 from app.models.user import User
-from app.models.practice_session import PracticeSession, AnswerRecording
+from app.models.practice_session import PracticeSession
 from app.schemas.practice_session import (
     PracticeSessionCreate,
     PracticeSessionResponse,
