@@ -1,7 +1,7 @@
 import json
 import logging
 from typing import Any, List, Dict
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, status, Body
 from sqlalchemy.orm import Session
 from fastapi import APIRouter, UploadFile, File, Depends
 from app.api.deps import get_current_user, get_db
@@ -15,6 +15,7 @@ from app.schemas.interview import (
     AnalysisResponse,
     AnswerFeedback
 )
+from pydantic import BaseModel
 from app.services.openai_service import generate_interview_questions, analyze_interview_answer, transcribe_audio
 from app.schemas.response import BaseResponseModel
 from app.services.redis_service import RedisService
@@ -24,6 +25,10 @@ from app.services.redis_service import RedisService
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# Define request model for analyze_answer
+class AnswerRequest(BaseModel):
+    user_answer: str
 
 @router.post("/generate", response_model=BaseResponseModel[GenerateQuestionsResponse])
 async def generate_questions(
@@ -224,7 +229,7 @@ def get_interviews(
 async def analyze_answer(
     interview_id: int,
     question_id: int,
-    user_answer: str,
+    request: AnswerRequest,
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Any:
@@ -269,13 +274,13 @@ async def analyze_answer(
     
     try:
         # Lưu câu trả lời của người dùng
-        question.user_answer = user_answer
+        question.user_answer = request.user_answer
         
         # Phân tích câu trả lời bằng AI
         feedback = await analyze_interview_answer(
             question=question.question,
             question_type=question.question_type,
-            user_answer=user_answer,
+            user_answer=request.user_answer,
             job_title=interview.job_title,
             job_description=interview.job_description,
             industry=interview.industry
