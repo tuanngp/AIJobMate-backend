@@ -6,13 +6,14 @@ from sqlalchemy.orm import Session
 from fastapi import APIRouter, UploadFile, File, Depends
 from app.api.deps import get_current_user, get_db
 from app.models.interview import Interview
-from app.models.interview_question import InterviewQuestion
+from app.models.interview_question import InterviewQuestion as InterviewQuestionModel
 from app.schemas.interview import (
     Interview as InterviewSchema,
-    InterviewQuestion,
+    InterviewQuestion as InterviewQuestionSchema,
     GenerateQuestionsRequest,
     GenerateQuestionsResponse,
     AnalysisResponse,
+    AnswerFeedback
 )
 from app.services.openai_service import generate_interview_questions, analyze_interview_answer, transcribe_audio
 from app.schemas.response import BaseResponseModel
@@ -109,7 +110,7 @@ async def generate_questions(
         # Lưu câu hỏi vào database
         question_objects = []
         for q_data in questions_data:
-            question = InterviewQuestion(
+            question = InterviewQuestionModel(
                 interview_id=new_interview.id,
                 question=q_data["question"],
                 question_type=q_data["question_type"],
@@ -121,16 +122,33 @@ async def generate_questions(
             question_objects.append(question)
         
         db.commit()
+        
+        # Đảm bảo các đối tượng question được refresh để có đầy đủ thông tin từ DB
+        refreshed_questions = []
         for q in question_objects:
             db.refresh(q)
+            # Chuyển đổi từ model sang schema
+            question_schema = InterviewQuestionSchema(
+                id=q.id,
+                interview_id=q.interview_id,
+                question=q.question,
+                question_type=q.question_type,
+                difficulty=q.difficulty,
+                category=q.category,
+                sample_answer=q.sample_answer,
+                created_at=q.created_at,
+                ai_feedback=q.ai_feedback,
+                user_answer=q.user_answer
+            )
+            refreshed_questions.append(question_schema)
         
-        # Tạo response data
-        response_data = {
-            "interview_id": new_interview.id,
-            "title": new_interview.title,
-            "job_title": new_interview.job_title,
-            "questions": question_objects
-        }
+        # Tạo response data đảm bảo tương thích với GenerateQuestionsResponse schema
+        response_data = GenerateQuestionsResponse(
+            interview_id=new_interview.id,
+            title=new_interview.title,
+            job_title=new_interview.job_title,
+            questions=refreshed_questions
+        )
         
         # Trả về response theo định dạng mới
         return BaseResponseModel(
@@ -237,8 +255,8 @@ async def analyze_answer(
     
     # Kiểm tra câu hỏi
     question = (
-        db.query(InterviewQuestion)
-        .filter(InterviewQuestion.id == question_id, InterviewQuestion.interview_id == interview_id)
+        db.query(InterviewQuestionModel)
+        .filter(InterviewQuestionModel.id == question_id, InterviewQuestionModel.interview_id == interview_id)
         .first()
     )
     
@@ -276,13 +294,13 @@ async def analyze_answer(
             "question": question.question,
             "question_type": question.question_type
         }
-
+        
         return BaseResponseModel(
             code=status.HTTP_200_OK,
             message="Phân tích câu trả lời thành công",
             data=response_data
         )
-
+        
     except Exception as e:
         logger.error(f"Lỗi khi phân tích câu trả lời: {str(e)}")
         return BaseResponseModel(
@@ -305,21 +323,21 @@ def delete_interview(
         .filter(Interview.id == interview_id, Interview.user_id == current_user["id"])
         .first()
     )
-
+    
     if not interview:
         return BaseResponseModel(
             code=status.HTTP_404_NOT_FOUND,
             message="Không tìm thấy phỏng vấn",
             errors={"interview": "Không tìm thấy phỏng vấn"}
         )
-
+    
     db.delete(interview)
     db.commit()
-
+    
     return BaseResponseModel(
         code=status.HTTP_200_OK,
         message="Đã xóa phỏng vấn thành công"
-    )
+    ) 
 
 @router.post("/speech-to-text")
 async def convert_speech_to_text(
@@ -335,8 +353,8 @@ async def convert_speech_to_text(
 
     try:
         interview = (
-            db.query(InterviewQuestion)
-            .filter(InterviewQuestion.id == interview_id, InterviewQuestion.user_id == current_user["id"])
+            db.query(InterviewQuestionModel)
+            .filter(InterviewQuestionModel.id == interview_id, InterviewQuestionModel.user_id == current_user["id"])
             .first()
         )
         text = await transcribe_audio(file)  # Hàm sẽ tự động nhận diện ngôn ngữ và chuyển thành text
