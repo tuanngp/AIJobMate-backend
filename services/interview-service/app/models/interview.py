@@ -8,7 +8,7 @@ class Interview(Base):
     __tablename__ = "interviews"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"))
+    user_id = Column(Integer, nullable=False)
     title = Column(String(255))
     job_title = Column(String(255))
     job_description = Column(Text, nullable=True)
@@ -21,4 +21,4 @@ class Interview(Base):
     
     # Relationships
     questions = relationship("InterviewQuestion", back_populates="interview", cascade="all, delete-orphan")
-    user = relationship("User") 
+    sessions = relationship("PracticeSession", back_populates="interview", cascade="all, delete-orphan") 

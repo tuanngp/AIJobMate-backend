@@ -2,9 +2,7 @@ import json
 import logging
 import hashlib
 from typing import Any, Dict, Optional
-
 import redis
-
 from app.core.config import settings
 
 # Cấu hình logging

@@ -54,13 +54,23 @@ class Settings(BaseSettings):
     OPENROUTER_API_KEY: str = os.getenv("OPENROUTER_API_KEY", "")
     SITE_URL: str = os.getenv("SITE_URL", "http://localhost:3000")
     SITE_NAME: str = os.getenv("SITE_NAME", "AI Interview Service")
-    AI_MODEL: str = os.getenv("AI_MODEL", "deepseek/deepseek-r1:free")
+    AI_MODEL: str = os.getenv("AI_MODEL", "deepseek/deepseek-chat-v3-0324:free")
     
     # Rate limiting
     RATE_LIMIT_PER_MINUTE: int = int(os.getenv("RATE_LIMIT_PER_MINUTE", 60))
     
+    # Storage settings
+    STORAGE_TYPE: str = "local"  # "s3" or "local"
+    LOCAL_STORAGE_PATH: str = os.path.join(os.getcwd(), "storage")
+    
+    # AWS S3 settings (if using S3)
+    AWS_ACCESS_KEY_ID: str = ""
+    AWS_SECRET_ACCESS_KEY: str = ""
+    AWS_REGION: str = "ap-southeast-1"
+    S3_BUCKET_NAME: str = ""
+
     class Config:
         case_sensitive = True
         env_file = ".env"
 
-settings = Settings() 
+settings = Settings()

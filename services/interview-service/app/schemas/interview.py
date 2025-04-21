@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
 from datetime import datetime
 
@@ -17,6 +17,29 @@ class InterviewQuestionUpdate(InterviewQuestionBase):
     ai_feedback: Optional[str] = None
     user_answer: Optional[str] = None
 
+# Feedback schema
+class FeedbackScore(BaseModel):
+    score: int
+    comments: str
+
+class CategoryScores(BaseModel):
+    content: int
+    delivery: int
+    relevance: int 
+    expertise: int
+
+class AnswerFeedback(BaseModel):
+    strengths: List[str]
+    weaknesses: List[str]
+    structure_clarity: FeedbackScore
+    relevance: FeedbackScore
+    expertise_level: FeedbackScore
+    improvement_suggestions: List[str]
+    sample_answer: str
+    category_scores: CategoryScores
+    overall_score: int
+    feedback_summary: str
+
 class InterviewQuestion(InterviewQuestionBase):
     id: int
     interview_id: int
@@ -26,6 +49,18 @@ class InterviewQuestion(InterviewQuestionBase):
     
     class Config:
         from_attributes = True
+    
+    @property
+    def parsed_feedback(self) -> Optional[AnswerFeedback]:
+        """Parse the JSON feedback string into a structured object"""
+        if not self.ai_feedback:
+            return None
+        try:
+            import json
+            feedback_dict = json.loads(self.ai_feedback)
+            return AnswerFeedback(**feedback_dict)
+        except:
+            return None
 
 # Interview Schema
 class InterviewBase(BaseModel):
@@ -68,4 +103,11 @@ class GenerateQuestionsResponse(BaseModel):
     interview_id: int
     title: str
     job_title: str
-    questions: List[InterviewQuestion] 
+    questions: List[InterviewQuestion]
+
+# Analysis Response Schema
+class AnalysisResponse(BaseModel):
+    question_id: int
+    question: str
+    question_type: str
+    feedback: AnswerFeedback 

@@ -1,7 +1,6 @@
 from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-
 from app.db.session import Base
 
 class InterviewQuestion(Base):
@@ -20,3 +19,7 @@ class InterviewQuestion(Base):
     
     # Relationships
     interview = relationship("Interview", back_populates="questions") 
+    recordings = relationship(
+        "AnswerRecording",
+        back_populates="question"
+    )
