@@ -27,7 +27,7 @@ def create_env_file():
             with open(".env", "w") as env_file:
                 env_file.write(env_content)
             
-            logger.info("Đã tạo file .env. Vui lòng cập nhật các thông tin cấu hình trước khi chạy ứng dụng.")
+            logger.info("Đã tạo file .env. Vui lòng cập nhật các thông tin API keys trước khi chạy ứng dụng.")
         else:
             logger.warning("Không tìm thấy file .env.example. Vui lòng tạo file .env thủ công.")
 
@@ -35,9 +35,9 @@ def main():
     """
     Hàm chính để chạy ứng dụng
     """
-    parser = argparse.ArgumentParser(description="Chạy API Gateway Service")
+    parser = argparse.ArgumentParser(description="Chạy AI Interview Service")
     parser.add_argument("--host", default="127.0.0.1", help="Host để bind server")
-    parser.add_argument("--port", type=int, default=8000, help="Port để bind server")
+    parser.add_argument("--port", type=int, default=8003, help="Port để bind server")
     parser.add_argument("--reload", action="store_true", help="Tự động reload khi code thay đổi")
     
     args = parser.parse_args()
@@ -48,9 +48,8 @@ def main():
     # Load biến môi trường
     load_dotenv(dotenv_path=".env", override=True)
     
-    logger.info(f"Chạy API Gateway Service tại http://{args.host}:{args.port}")
-    logger.info("Truy cập http://localhost:8000/docs để xem Swagger UI API documentation")
-    logger.info("API Gateway đang điều hướng requests đến các microservices...")
+    logger.info(f"Chạy AI Interview Service tại http://{args.host}:{args.port}")
+    logger.info("Truy cập http://localhost:8003/docs để xem Swagger UI API documentation")
     
     # Chạy ứng dụng
     uvicorn.run(
@@ -61,4 +60,4 @@ def main():
     )
 
 if __name__ == "__main__":
-    main()
+    main() 

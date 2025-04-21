@@ -44,8 +44,8 @@ alembic upgrade head
 ### 2.4. Thiết lập môi trường
 
 ```bash
-# Tạo file .env từ .env.sample
-cp .env.sample .env
+# Tạo file .env từ .env.example
+cp .env.example .env
 
 # Chỉnh sửa .env với các thông tin cần thiết
 # - OPENAI_API_KEY: API key của OpenAI

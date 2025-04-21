@@ -13,10 +13,11 @@ class Settings(BaseSettings):
     # Service URLs
     AUTH_SERVICE_URL: str = os.getenv("AUTH_SERVICE_URL", "http://localhost:8001")
     CAREER_ADVISOR_SERVICE_URL: str = os.getenv("CAREER_ADVISOR_SERVICE_URL", "http://localhost:8002")
+    INTERVIEW_SERVICE_URL: str = os.getenv("INTERVIEW_SERVICE_URL", "http://localhost:8003")
     FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
     # CORS
-    ALLOWED_ORIGINS: List[str] = ["http://localhost:3000"]
+    ALLOWED_ORIGINS: List[str] = [FRONTEND_URL]
     ALLOWED_METHODS: List[str] = ["*"]
     ALLOWED_HEADERS: List[str] = ["*"]
 
@@ -46,26 +47,23 @@ class Settings(BaseSettings):
             "/users/{user_id}",
             "/users/{user_id}/disable",
             "/users/{user_id}/enable",
-            "/health"
         ]),
         "career_advisor": (CAREER_ADVISOR_SERVICE_URL, [
-            "/users",
-            "/cv",
-            "/career-profiles",
-            "/career-advisor", 
-            "/users/me",
-            "/users/{user_id}",
             "/cv/upload",
             "/cv/list",
             "/cv/{cv_id}",
             "/cv/{cv_id}/analyze",
-            "/career-profiles/",
-            "/career-profiles/{profile_id}",
-            "/career-advisor/analyze",
-            "/career-advisor/analyze/{task_id}",
-            "/career-advisor/recommendations",
-            "/health"
-        ])
+        ]),
+        "interview": (INTERVIEW_SERVICE_URL, [
+            "/interviews",
+            "/interviews/{interview_id}",
+            "/interviews/{interview_id}/questions",
+            "/interviews/{interview_id}/questions/{question_id}",
+            "/interviews/{interview_id}/questions/{question_id}/answer",
+            "/practice-sessions",
+            "/practice-sessions/{session_id}",
+            "/practice-sessions/{session_id}/answer",
+        ]),
     }
     
     PUBLIC_PATHS: List[str] = [
@@ -101,6 +99,7 @@ class Settings(BaseSettings):
                     mapping[prefixed_path] = service_url
         
         return mapping
+
     # Monitoring
     ENABLE_METRICS: bool = True
 
