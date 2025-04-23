@@ -1,7 +1,7 @@
 import json
 import logging
 from typing import Any, List, Dict
-from fastapi import APIRouter, Depends, status, Body
+from fastapi import APIRouter, Depends, Form, status, Body
 from sqlalchemy.orm import Session
 from fastapi import APIRouter, UploadFile, File, Depends
 from app.api.deps import get_current_user, get_db
@@ -343,13 +343,11 @@ def delete_interview(
         code=status.HTTP_200_OK,
         message="Đã xóa phỏng vấn thành công"
     ) 
-
 @router.post("/speech-to-text")
 async def convert_speech_to_text(
-    interview_id: int,
-    file: UploadFile = File(...),  # File âm thanh được tải lên
+    interview_id: int = Form(...), 
+    file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_current_user)
 ):
     """
     Nhận diện giọng nói từ file âm thanh và chuyển thành văn bản.
@@ -359,7 +357,7 @@ async def convert_speech_to_text(
     try:
         interview = (
             db.query(InterviewQuestionModel)
-            .filter(InterviewQuestionModel.id == interview_id, InterviewQuestionModel.user_id == current_user["id"])
+            .filter(InterviewQuestionModel.id == interview_id)
             .first()
         )
         text = await transcribe_audio(file)  # Hàm sẽ tự động nhận diện ngôn ngữ và chuyển thành text
@@ -368,4 +366,3 @@ async def convert_speech_to_text(
         return {"transcript": text}  # Trả về văn bản
     except Exception as e:
         return {"error": str(e)}  # Trả về lỗi nếu có
-

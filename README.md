@@ -48,7 +48,13 @@ AI JobMate cung cấp các tính năng chính:
    - JWT & OAuth2
    - Chức năng: Quản lý người dùng và xác thực
 
-3. **API Gateway** (Port: 8000)
+3. **Interview Service** (Port: 8003)
+   - Framework: FastAPI
+   - Cache: Redis
+   - External APIs: OpenRouter (GPT)
+   - Chức năng: Thực hành phỏng vấn với AI
+
+4. **API Gateway** (Port: 8000)
    - Reverse proxy và load balancing
    - Rate limiting và caching
    - Request routing
@@ -101,44 +107,66 @@ docker-compose ps
 
 ## ⚙️ Cấu hình môi trường
 
-File `.env` cần có các biến môi trường sau:
+File `.env` cần có các biến môi trường chính sau:
 
 ```env
-# Database
+# Database configurations
 POSTGRES_USER=your_user
 POSTGRES_PASSWORD=your_password
 
-# JWT Authentication
-JWT_SECRET_KEY=your_jwt_secret
-JWT_REFRESH_SECRET_KEY=your_refresh_secret
+# Database names
+POSTGRES_AUTH_DB=auth_service
+POSTGRES_CAREER_ADVISOR_DB=career_advisor_service
 
-# External APIs
+# Redis configuration
+REDIS_HOST=redis
+REDIS_PORT=6379
+REDIS_DB=0
+REDIS_INTERVIEW_DB=1
+
+# AI Services
 OPENROUTER_API_KEY=your_openrouter_key
 PINECONE_API_KEY=your_pinecone_key
 PINECONE_ENVIRONMENT=your_pinecone_env
-PINECONE_INDEX=your_index_name
+PINECONE_INDEX=career-advisor
+
+# Security settings
+JWT_SECRET_KEY=your_jwt_secret_min_32_chars
+JWT_REFRESH_SECRET_KEY=your_refresh_secret_min_32_chars
 ```
 
-## 📚 API Documentation
-
-Sau khi khởi động hệ thống, bạn có thể truy cập:
-
-- Swagger UI: http://localhost:8000/docs
-- ReDoc: http://localhost:8000/redoc
-
-### API Endpoints
-
-- Authentication:
-  - POST /auth/login
-  - POST /auth/register
-  - POST /auth/refresh-token
-  
-- Career Advisor:
-  - POST /career/analyze
-  - GET /career/recommendations
-  - POST /career/feedback
-
 ## 🐳 Quản lý Docker
+
+### Development Workflow
+
+1. **Hot Reload Development:**
+```bash
+# Khởi động với volume mounts cho hot reload
+docker-compose up -d
+```
+
+2. **Rebuild Service Cụ thể:**
+```bash
+# Rebuild và restart một service
+docker-compose up -d --build [service-name]
+```
+
+3. **Clean Environment:**
+```bash
+# Xóa tất cả containers, images và volumes
+docker-compose down -v --rmi all
+```
+
+### Resource Management
+
+Mỗi service được cấu hình với resource limits để tránh quá tải:
+
+- API Gateway: 0.5 CPU, 512MB RAM
+- Auth Service: 0.5 CPU, 512MB RAM
+- Career Advisor: 0.75 CPU, 1GB RAM
+- Interview Service: 0.75 CPU, 1GB RAM
+- PostgreSQL: 0.5 CPU, 512MB RAM
+- Redis: 0.25 CPU, 256MB RAM
 
 ### Xem logs
 
@@ -172,6 +200,7 @@ Mỗi service đều có endpoint kiểm tra sức khỏe:
 - API Gateway: http://localhost:8000/health
 - Auth Service: http://localhost:8001/health
 - Career Advisor: http://localhost:8002/health
+- Interview Service: http://localhost:8003/health
 
 ### Metrics
 

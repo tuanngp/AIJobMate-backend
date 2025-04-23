@@ -9,12 +9,15 @@ services:
     environment:
       - AUTH_SERVICE_URL=${AUTH_SERVICE_URL}
       - CAREER_ADVISOR_SERVICE_URL=${CAREER_ADVISOR_SERVICE_URL}
+      - INTERVIEW_SERVICE_URL=${INTERVIEW_SERVICE_URL}
       - FRONTEND_URL=${FRONTEND_URL}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
     depends_on:
       auth-service:
         condition: service_healthy
       career-advisor-service:
+        condition: service_healthy
+      interview-service:
         condition: service_healthy
     networks:
       - backend
@@ -24,6 +27,12 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 512M
 
   # Auth Service
   auth-service:
@@ -54,7 +63,14 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 512M
 
+  # Career Advisor Service
   career-advisor-service:
     build:
       context: ./services/career-advisor-service
@@ -88,6 +104,48 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.75'
+          memory: 1G
+
+  # Interview Service
+  interview-service:
+    build:
+      context: ./services/interview-service
+      dockerfile: Dockerfile
+    ports:
+      - "8003:8000"
+    environment:
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - REDIS_HOST=${REDIS_HOST}
+      - REDIS_PORT=${REDIS_PORT}
+      - REDIS_DB=${REDIS_DB}
+      - POSTGRES_SERVER=postgres-interview
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_INTERVIEW_DB}
+    volumes:
+      - ./services/interview-service:/app
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.75'
+          memory: 1G
 
   # PostgreSQL for Auth Service
   postgres-auth:
@@ -101,11 +159,17 @@ services:
     networks:
       - backend
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d auth_service"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_AUTH_DB}"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 10s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 512M
 
   # PostgreSQL for Career Advisor
   postgres-career:
@@ -119,12 +183,42 @@ services:
     networks:
       - backend
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d career_advisor_service"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_CAREER_ADVISOR_DB}"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 10s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 512M
 
+  # PostgreSQL for Interview Service
+  postgres-interview:
+    image: postgres:16
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_INTERVIEW_DB}
+    volumes:
+      - postgres_interview_data:/var/lib/postgresql/data
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_INTERVIEW_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 512M
+  # Redis
   redis:
     image: redis:alpine
     command: redis-server --appendonly yes
@@ -138,6 +232,12 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 256M
 
 networks:
   backend:
@@ -146,4 +246,5 @@ networks:
 volumes:
   postgres_auth_data:
   postgres_career_data:
+  postgres_interview_data:
   redis_data:

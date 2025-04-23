@@ -72,3 +72,8 @@ transformers_cache/
 
 # DVC artifacts (if used)
 .dvc/
+
+Dockerfile
+docker-compose*.yml
+README.md
+*.md
