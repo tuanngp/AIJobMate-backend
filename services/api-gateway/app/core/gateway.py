@@ -65,33 +65,23 @@ class GatewayHandler:
                     
         return matched_service
 
-    async def forward_request(
-        self,
-        request: Request,
-        target_url: str,
-        headers: Dict[str, str]
-    ) -> httpx.Response:
-        """
-        Forward request tới service tương ứng.
-        """
-        # Get request content
+    async def forward_request(self, request: Request, target_url: str, headers: Dict[str, str]) -> httpx.Response:
         body = await request.body()
-        
-        # Forward request với method và headers tương ứng
-        try:
-            response = await self.client.request(
-                method=request.method,
-                url=f"{target_url}{request.url.path}",
-                params=request.query_params,
-                headers=headers,
-                content=body
-            )
-            return response
-        except httpx.RequestError as e:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=f"Error forwarding request: {str(e)}"
-            )
+        async with httpx.AsyncClient(timeout=240.0) as client:
+            try:
+                response = await client.request(
+                    method=request.method,
+                    url=f"{target_url}{request.url.path}",
+                    params=request.query_params,
+                    headers=headers,
+                    content=body
+                )
+                return response
+            except httpx.RequestError as e:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail=f"Error forwarding request: {str(e)}"
+                )
 
     def is_public_path(self, path: str) -> bool:
         """

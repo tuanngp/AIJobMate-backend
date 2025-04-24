@@ -400,7 +400,7 @@ async def transcribe_audio(file: UploadFile) -> str:
         audio.export(temp_output.name, format="wav")
 
         # Nhận diện không cần truyền ngôn ngữ
-        model = WhisperModel("large", compute_type="int8")
+        model = WhisperModel("base", device="cpu", compute_type="int16")
         segments, info = model.transcribe(temp_output.name, beam_size=5)
         text = " ".join([seg.text for seg in segments])
 
