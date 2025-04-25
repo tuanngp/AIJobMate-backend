@@ -19,14 +19,14 @@ class InterviewQuestionUpdate(InterviewQuestionBase):
 
 # Feedback schema
 class FeedbackScore(BaseModel):
-    score: int
+    score: float
     comments: str
 
 class CategoryScores(BaseModel):
-    content: int
-    delivery: int
-    relevance: int 
-    expertise: int
+    content: float
+    delivery: float
+    relevance: float 
+    expertise: float
 
 class AnswerFeedback(BaseModel):
     strengths: List[str]
@@ -37,7 +37,7 @@ class AnswerFeedback(BaseModel):
     improvement_suggestions: List[str]
     sample_answer: str
     category_scores: CategoryScores
-    overall_score: int
+    overall_score: float
     feedback_summary: str
 
 class InterviewQuestion(InterviewQuestionBase):
